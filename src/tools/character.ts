@@ -2070,6 +2070,31 @@ export async function setMaxHp(
   return { content: [{ type: "text", text: `Set max HP override to ${params.maxHp} on character ${params.characterId}.` }] };
 }
 
+interface SetItemEquippedParams {
+  characterId: number;
+  inventoryItemId: number;
+  equipped?: boolean;
+}
+
+/**
+ * Equip or unequip an inventory item by its inventory entry id (the `id` on each
+ * entry in the character's inventory array, NOT the item definition id). A weapon
+ * only appears as an attack action once it is equipped; add_inventory_items adds
+ * items unequipped.
+ */
+export async function setItemEquipped(
+  client: DdbClient,
+  params: SetItemEquippedParams
+): Promise<ToolResult> {
+  const equipped = params.equipped ?? true;
+  await client.put(
+    ENDPOINTS.character.inventory.equipped(),
+    { characterId: params.characterId, id: params.inventoryItemId, value: equipped },
+    [`character:${params.characterId}`]
+  );
+  return { content: [{ type: "text", text: `${equipped ? "Equipped" : "Unequipped"} inventory item ${params.inventoryItemId} on character ${params.characterId}.` }] };
+}
+
 const CUSTOM_PROFICIENCY_TYPES: Record<number, string> = { 1: "skill", 2: "tool", 3: "language" };
 
 interface AddCustomProficiencyParams {

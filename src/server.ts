@@ -40,6 +40,7 @@ import {
   setAbilityScoreType,
   setStartingEquipmentType,
   addInventoryItems,
+  setItemEquipped,
   setGold,
   setMaxHp,
   addCustomProficiency,
@@ -674,6 +675,22 @@ export async function startServer(): Promise<void> {
       addInventoryItems(client, {
         characterId: params.characterId,
         equipment: params.equipment,
+      })
+  );
+
+  server.tool(
+    "equip_item",
+    "Equip or unequip an inventory item. A weapon only appears as an attack action (and armor only affects AC) once equipped; add_inventory_items adds items unequipped. Pass the inventory ENTRY id (the 'id' on each entry in the character's inventory array, from get_character), not the item definition id.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      inventoryItemId: z.coerce.number().describe("Inventory entry id (inventory[].id), not the item definition id"),
+      equipped: z.boolean().optional().describe("true to equip (default), false to unequip"),
+    },
+    async (params) =>
+      setItemEquipped(client, {
+        characterId: params.characterId,
+        inventoryItemId: params.inventoryItemId,
+        equipped: params.equipped,
       })
   );
 

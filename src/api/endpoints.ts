@@ -51,6 +51,9 @@ export const ENDPOINTS = {
       // Working bulk-currency endpoint (replaces the deprecated per-id path above)
       currency: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency`,
       customItem: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/item`,
+      // Equip / unequip an inventory item. Body: { characterId, id, value: boolean }.
+      // A weapon only shows up as an attack action once it is equipped.
+      equipped: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item/equipped`,
       setStartingType: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/starting-type`,
     },
     delete: () => `${DDB_CHARACTER_SERVICE}/character/v5/character`,
