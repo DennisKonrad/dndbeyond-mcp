@@ -66,6 +66,7 @@ After adding the configuration, restart Claude Desktop.
 
 ### Character
 - `get_character` — Full character sheet by ID or name
+- `get_character_choices` — Inspect builder choices: resolved values, options, and the ids to change them
 - `list_characters` — All your characters
 - `update_hp` — Apply damage or healing
 - `update_spell_slots` — Use or restore spell slots

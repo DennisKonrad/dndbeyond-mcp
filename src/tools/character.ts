@@ -1128,9 +1128,22 @@ export async function getCharacterChoices(
 
   const choices = (char as any).choices ?? {};
   const optMap = buildChoiceOptionMap(choices);
-  const cls = char.classes?.[0];
-  const classId = cls?.definition?.id;
-  const classMappingId = (cls as { id?: number })?.id;
+
+  // Map each class feature id -> its owning class's ids, so a class choice gets
+  // the correct classId/classMappingId even on a multiclass character (a choice
+  // on the 2nd class must not inherit the 1st class's ids).
+  const classByFeatureId = new Map<number, { classId?: number; classMappingId?: number }>();
+  const classSummaries: string[] = [];
+  for (const c of char.classes ?? []) {
+    const ids = { classId: c.definition?.id, classMappingId: (c as { id?: number }).id };
+    classSummaries.push(`${c.definition?.name ?? "?"}: classId=${ids.classId ?? "?"} classMappingId=${ids.classMappingId ?? "?"}`);
+    const feats = (c as { classFeatures?: Array<{ id?: number; definition?: { id?: number } }> }).classFeatures ?? [];
+    for (const f of feats) {
+      const fid = f.definition?.id ?? f.id;
+      if (fid != null) classByFeatureId.set(fid, ids);
+    }
+  }
+  const fallbackClassIds = { classId: char.classes?.[0]?.definition?.id, classMappingId: (char.classes?.[0] as { id?: number })?.id };
 
   const sections: string[] = [
     `=== Choices: ${char.name} (id ${idOrError}) ===`,
@@ -1145,8 +1158,8 @@ export async function getCharacterChoices(
     if (!Array.isArray(list) || list.length === 0) continue;
 
     const header =
-      category === "class"
-        ? `CLASS  (classId=${classId ?? "?"}, classMappingId=${classMappingId ?? "?"})`
+      category === "class" && classSummaries.length
+        ? `CLASS  (${classSummaries.join("; ")})`
         : category.toUpperCase();
     const lines: string[] = [header];
 
@@ -1161,17 +1174,18 @@ export async function getCharacterChoices(
       const title = [compLabel, ch.label].filter(Boolean).join(" — ") || "(choice)";
       const resolvedLabel = resolved ? labelOf(ch.optionValue) : "UNRESOLVED";
 
-      const idKey =
-        category === "class" ? "classFeatureId"
-        : category === "feat" ? "featId"
-        : category === "race" ? "racialTraitId"
-        : "componentId";
-
       lines.push(`  [${marker}] ${title} → ${resolvedLabel}`);
-      lines.push(`       ${idKey}=${ch.componentId} type=${ch.type} choiceKey="${ch.id}"`);
-      if (options.length > 12) {
-        lines.push(`       options: ${options.length} available (resolved value shown above)`);
-      } else if (options.length > 0) {
+      if (category === "class") {
+        const owner = classByFeatureId.get(ch.componentId) ?? fallbackClassIds;
+        lines.push(`       classId=${owner.classId ?? "?"} classMappingId=${owner.classMappingId ?? "?"} classFeatureId=${ch.componentId} type=${ch.type} choiceKey="${ch.id}"`);
+      } else {
+        const idKey = category === "feat" ? "featId" : category === "race" ? "racialTraitId" : "componentId";
+        lines.push(`       ${idKey}=${ch.componentId} type=${ch.type} choiceKey="${ch.id}"`);
+      }
+      // Always emit every option id — large pools (skills are small, but spell/
+      // language/ability pools can be 100+) are exactly the ones an agent needs
+      // a concrete choiceValue for, so a count-only fallback would defeat the tool.
+      if (options.length > 0) {
         const opts = options
           .map((o) => `${o.id} ${o.label}${o.id === ch.optionValue ? " ✓" : ""}`)
           .join(" | ");
