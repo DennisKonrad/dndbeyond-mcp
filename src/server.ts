@@ -583,7 +583,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "set_ability_score",
-    "Set an ability score for a character. statId: 1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA. IMPORTANT: 'type' selects which underlying array is written, NOT the generation method: 1=base score (the rolled/array/point-buy value, before racial/ASI bonuses), 2=misc bonus (added on top of base+racial), 3=override (replaces the final total, ignoring base/racial/bonuses). Use 1 to set base scores; use 3 to force exact final totals (e.g. imported characters). Set the generation method separately with set_ability_score_type.",
+    "Set an ability score for a character. statId: 1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA. IMPORTANT: 'type' selects which underlying array is written, NOT the generation method: 1=base score (the rolled/array/point-buy value, before racial/ASI bonuses), 2=misc bonus (added on top of base+racial), 3=override (replaces the displayed total). ALWAYS set the base score (type 1) — D&D Beyond flags a character as 'Character Not Ready' (missing Ability Scores) if no base score is set, even when an override is present. Use override (type 3) only as an extra on top of a real base, never as a substitute. To enter exact final totals: set the generation method to Rolled via set_ability_score_type, then set base scores (type 1) equal to the desired totals minus any racial/ASI bonus (D&D Beyond applies those on top). Pass value=null with type 3 to clear an override.",
     {
       characterId: z.coerce.number().describe("The character ID"),
       statId: z.coerce.number().describe("Ability stat ID (1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA)"),
