@@ -95,6 +95,7 @@ export interface DdbSpellsContainer {
 export interface DdbSpell {
   id: number;
   definition: {
+    id?: number;
     name: string;
     level: number;
     school: string;
@@ -122,6 +123,16 @@ export interface DdbSpell {
   prepared: boolean;
   alwaysPrepared: boolean;
   usesSpellSlot: boolean;
+  // Optional fields present in the live character-service payload, used to
+  // annotate a spell's granting source and its casting mode.
+  componentId?: number;
+  componentTypeId?: number;
+  spellCastingAbilityId?: number | null;
+  limitedUse?: {
+    maxUses?: number | null;
+    resetType?: number | null; // 1=short rest, 2=long rest, 3=day, 4=recharge
+    numberUsed?: number | null;
+  } | null;
 }
 
 export interface DdbInventoryItem {
@@ -184,6 +195,7 @@ export interface DdbModifier {
 
 export interface DdbFeat {
   definition: {
+    id?: number;
     name: string;
     description: string;
     snippet: string | null;

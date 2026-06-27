@@ -56,24 +56,82 @@ function formatHp(char: DdbCharacter): string {
   return temp > 0 ? `${current}/${max} (+${temp} temp)` : `${current}/${max}`;
 }
 
+const SPELL_ABILITY_ABBR: Record<number, string> = { 1: "STR", 2: "DEX", 3: "CON", 4: "INT", 5: "WIS", 6: "CHA" };
+// D&D Beyond limitedUse.resetType convention
+const LIMITED_USE_RESET: Record<number, string> = { 1: "short rest", 2: "long rest", 3: "day", 4: "recharge" };
+
+// Resolve which feat/feature/item granted a spell, from its componentId.
+// Falls back to the container category (class/feat/item/species/background).
+function resolveSpellSource(spell: DdbSpell, category: string, char: DdbCharacter): string {
+  const cid = spell.componentId;
+  if (cid != null) {
+    const feat = (char.feats ?? []).find((f) => f.definition?.id === cid);
+    if (feat?.definition?.name) return `feat: ${feat.definition.name}`;
+    const item = (char.inventory ?? []).find((i) => (i.definition as { id?: number })?.id === cid);
+    if (item?.definition?.name) return `item: ${item.definition.name}`;
+    for (const cls of char.classes ?? []) {
+      const feats = (cls as { classFeatures?: Array<{ id?: number; definition?: { id?: number; name?: string } }> }).classFeatures ?? [];
+      const cf = feats.find((f) => f.definition?.id === cid || f.id === cid);
+      if (cf?.definition?.name) return `class: ${cf.definition.name}`;
+    }
+  }
+  return category;
+}
+
+// Describe HOW a spell is cast: prepared state, limited uses, slot usage, casting ability.
+function formatSpellMode(spell: DdbSpell): string {
+  const parts: string[] = [];
+  if (spell.alwaysPrepared) parts.push("always prepared");
+  else if (spell.prepared) parts.push("prepared");
+  const lu = spell.limitedUse;
+  if (lu && lu.maxUses != null) {
+    const reset = lu.resetType != null ? (LIMITED_USE_RESET[lu.resetType] ?? `reset ${lu.resetType}`) : "limited";
+    parts.push(`${lu.maxUses}/${reset}`);
+  }
+  if (spell.usesSpellSlot === false) parts.push("no slot");
+  else if (spell.usesSpellSlot === true) parts.push("spell slot");
+  const abil = spell.spellCastingAbilityId;
+  if (abil && SPELL_ABILITY_ABBR[abil]) parts.push(SPELL_ABILITY_ABBR[abil]);
+  return parts.join(" · ");
+}
+
+function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; category: string }> {
+  const out: Array<{ spell: DdbSpell; category: string }> = [];
+  const add = (arr: DdbSpell[] | null | undefined, category: string) => {
+    for (const s of arr ?? []) out.push({ spell: s, category });
+  };
+  add(char.spells.class, "class");
+  add(char.spells.race, "species");
+  add(char.spells.background, "background");
+  add(char.spells.item, "item");
+  add(char.spells.feat, "feat");
+  return out;
+}
+
 function formatSpells(char: DdbCharacter): string {
-  const allSpells = getAllSpells(char);
+  const prepared = getAllSpellsWithSource(char).filter(
+    ({ spell }) => spell.prepared || spell.alwaysPrepared
+  );
+  if (prepared.length === 0) return StringUtils.EMPTY;
 
-  if (allSpells.length === 0) return StringUtils.EMPTY;
-
-  const prepared = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
-  const preparedByLevel = prepared.reduce((acc, spell) => {
+  // Each entry is annotated with its source + casting mode so that two entries
+  // with the same name (e.g. a feat granting one spell in two cast modes) stay
+  // distinguishable instead of collapsing to "Polymorph, Polymorph".
+  const byLevel = prepared.reduce((acc, { spell, category }) => {
     const level = spell.definition.level;
     if (!acc[level]) acc[level] = [];
-    acc[level].push(spell.definition.name);
+    const tag = [resolveSpellSource(spell, category, char), formatSpellMode(spell)]
+      .filter(Boolean)
+      .join(" · ");
+    acc[level].push(tag ? `${spell.definition.name} (${tag})` : spell.definition.name);
     return acc;
   }, {} as Record<number, string[]>);
 
-  const lines = Object.entries(preparedByLevel)
+  const lines = Object.entries(byLevel)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([level, spells]) => {
       const levelLabel = level === "0" ? "Cantrips" : `Level ${level}`;
-      return `  ${levelLabel}: ${spells.join(", ")}`;
+      return `  ${levelLabel}:\n${spells.map((s) => `    - ${s}`).join("\n")}`;
     });
 
   return `\nPrepared Spells:\n${lines.join("\n")}`;
@@ -1015,6 +1073,116 @@ export async function getCharacter(
   }
 
   return { content: [{ type: "text", text }] };
+}
+
+// ============================================================================
+// CHOICE INSPECTION (read-only)
+// ============================================================================
+
+const CHOICE_CATEGORIES = ["class", "race", "background", "feat"] as const;
+
+type ChoiceOption = { id: number; label: string };
+
+function buildChoiceOptionMap(choices: any): Map<string, ChoiceOption[]> {
+  const map = new Map<string, ChoiceOption[]>();
+  for (const def of choices?.choiceDefinitions ?? []) {
+    if (def?.id && Array.isArray(def.options)) map.set(def.id, def.options);
+  }
+  return map;
+}
+
+// Best-effort friendly name for the feature/feat a choice belongs to.
+function choiceComponentLabel(choice: any, category: string, char: DdbCharacter): string | null {
+  const cid = choice?.componentId;
+  if (cid == null) return null;
+  if (category === "feat") {
+    const feat = (char.feats ?? []).find((f) => f.definition?.id === cid);
+    if (feat?.definition?.name) return feat.definition.name;
+  }
+  const opts = (char as any).options?.[category] ?? [];
+  const match = opts.find((o: any) => o.componentId === cid);
+  if (match?.definition?.name) return match.definition.name;
+  return null;
+}
+
+/**
+ * Inspect a character's builder choices with their resolved values, available
+ * options, and the exact ids needed to (re)resolve each one. Surfaces in a
+ * single call what is otherwise hidden by the formatted sheet — e.g. which
+ * choice grants a skill proficiency, or whether a meaningful pick is unresolved.
+ */
+export async function getCharacterChoices(
+  client: DdbClient,
+  params: GetCharacterParams
+): Promise<ToolResult> {
+  const idOrError = await resolveCharacterId(client, params);
+  if (typeof idOrError === "string") {
+    return { content: [{ type: "text", text: idOrError }] };
+  }
+
+  const char = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(idOrError),
+    `character:${idOrError}`,
+    60_000
+  );
+
+  const choices = (char as any).choices ?? {};
+  const optMap = buildChoiceOptionMap(choices);
+  const cls = char.classes?.[0];
+  const classId = cls?.definition?.id;
+  const classMappingId = (cls as { id?: number })?.id;
+
+  const sections: string[] = [
+    `=== Choices: ${char.name} (id ${idOrError}) ===`,
+    `Resolve with set_class_feature_choice / set_feat_choice / set_race_trait_choice / set_background_choice using the ids shown.`,
+  ];
+
+  let total = 0;
+  let unresolved = 0;
+
+  for (const category of CHOICE_CATEGORIES) {
+    const list = choices[category];
+    if (!Array.isArray(list) || list.length === 0) continue;
+
+    const header =
+      category === "class"
+        ? `CLASS  (classId=${classId ?? "?"}, classMappingId=${classMappingId ?? "?"})`
+        : category.toUpperCase();
+    const lines: string[] = [header];
+
+    for (const ch of list) {
+      total++;
+      const options = optMap.get(`${ch.componentTypeId}-${ch.type}`) ?? [];
+      const labelOf = (id: number) => options.find((o) => o.id === id)?.label ?? String(id);
+      const resolved = ch.optionValue != null;
+      if (!resolved) unresolved++;
+      const marker = resolved ? "✓" : "✗";
+      const compLabel = choiceComponentLabel(ch, category, char);
+      const title = [compLabel, ch.label].filter(Boolean).join(" — ") || "(choice)";
+      const resolvedLabel = resolved ? labelOf(ch.optionValue) : "UNRESOLVED";
+
+      const idKey =
+        category === "class" ? "classFeatureId"
+        : category === "feat" ? "featId"
+        : category === "race" ? "racialTraitId"
+        : "componentId";
+
+      lines.push(`  [${marker}] ${title} → ${resolvedLabel}`);
+      lines.push(`       ${idKey}=${ch.componentId} type=${ch.type} choiceKey="${ch.id}"`);
+      if (options.length > 12) {
+        lines.push(`       options: ${options.length} available (resolved value shown above)`);
+      } else if (options.length > 0) {
+        const opts = options
+          .map((o) => `${o.id} ${o.label}${o.id === ch.optionValue ? " ✓" : ""}`)
+          .join(" | ");
+        lines.push(`       options: ${opts}`);
+      }
+    }
+    sections.push(lines.join("\n"));
+  }
+
+  sections.push(`Total choices: ${total} | unresolved: ${unresolved}`);
+  return { content: [{ type: "text", text: sections.join("\n\n") }] };
 }
 
 export async function listCharacters(

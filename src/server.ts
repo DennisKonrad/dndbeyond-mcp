@@ -10,6 +10,7 @@ import { registerCampaignResources } from "./resources/campaign.js";
 import { setupAuth, checkAuth } from "./tools/auth.js";
 import {
   getCharacter,
+  getCharacterChoices,
   getDefinition,
   listCharacters,
   updateHp,
@@ -132,6 +133,20 @@ export async function startServer(): Promise<void> {
     "List all characters across all campaigns",
     {},
     async () => listCharacters(client)
+  );
+
+  server.tool(
+    "get_character_choices",
+    "Inspect a character's builder choices (class/feat/race/background): each choice's resolved value, available options, and the exact ids needed to (re)resolve it via set_class_feature_choice / set_feat_choice / set_race_trait_choice / set_background_choice. Use this to see WHY a skill/spell/option is present, or to change a meaningful pick that resolve_choices would get wrong.",
+    {
+      characterId: z.coerce.number().optional().describe("The character ID"),
+      characterName: z.string().optional().describe("The character name (case-insensitive search)"),
+    },
+    async (params) =>
+      getCharacterChoices(client, {
+        characterId: params.characterId,
+        characterName: params.characterName,
+      })
   );
 
   server.tool(
