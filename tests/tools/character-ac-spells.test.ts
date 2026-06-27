@@ -637,3 +637,60 @@ describe("Spell Save DC Calculation", () => {
     expect(text).toContain("Sorcerer: DC 14 (+6 attack)");
   });
 });
+
+describe("Spell source and cast-mode annotation", () => {
+  function polymorph(over: { id: number; usesSpellSlot: boolean; spellCastingAbilityId?: number | null; limitedUse?: unknown }) {
+    return {
+      id: over.id,
+      definition: {
+        id: 2618876, name: "Polymorph", level: 4, school: "Transmutation",
+        description: "", range: null, duration: null, activation: null,
+        components: null, componentsDescription: null, concentration: true, ritual: false,
+      },
+      prepared: false,
+      alwaysPrepared: true,
+      usesSpellSlot: over.usesSpellSlot,
+      componentId: 101, // matches the feat's definition.id below
+      componentTypeId: 1088085227,
+      spellCastingAbilityId: over.spellCastingAbilityId ?? null,
+      limitedUse: over.limitedUse ?? null,
+    };
+  }
+
+  it("tags each prepared spell with its source + cast mode and keeps duplicate-name entries distinct", async () => {
+    const character: DdbCharacter = {
+      ...baseCharacter,
+      classes: [{ id: 1, definition: { name: "Wizard" }, subclassDefinition: null, level: 5, isStartingClass: true, classFeatures: [] }],
+      inventory: [],
+      modifiers: { race: [], class: [], background: [], item: [], feat: [], condition: [] },
+      feats: [{ id: 1, definition: { id: 101, name: "Dark Bargain", description: "", prerequisite: null }, componentId: 50, componentTypeId: 12 }],
+      spells: {
+        race: [],
+        class: [{
+          id: 9, definition: {
+            name: "Cure Wounds", level: 1, school: "Evocation", description: "",
+            range: null, duration: null, activation: null, components: null,
+            componentsDescription: null, concentration: false, ritual: false,
+          }, prepared: true, alwaysPrepared: false, usesSpellSlot: true,
+        }],
+        background: [],
+        item: [],
+        feat: [
+          polymorph({ id: 7351760, usesSpellSlot: false, spellCastingAbilityId: 4, limitedUse: { maxUses: 1, resetType: 2 } }),
+          polymorph({ id: 7351761, usesSpellSlot: true }),
+        ],
+      },
+    } as unknown as DdbCharacter;
+
+    const client = createMockClient();
+    vi.mocked(client.get).mockResolvedValue(character);
+
+    const text = (await getCharacter(client, { characterId: 12345, detail: "sheet" })).content[0].text;
+
+    // Feat-granted spell: source name + the two distinct cast modes must both appear.
+    expect(text).toContain("Polymorph (feat: Dark Bargain · always prepared · 1/long rest · no slot · INT)");
+    expect(text).toContain("Polymorph (feat: Dark Bargain · always prepared · spell slot)");
+    // Class spell falls back to the container category when no feat/item/feature matches.
+    expect(text).toContain("Cure Wounds (class · prepared · spell slot)");
+  });
+});
