@@ -275,6 +275,8 @@ describe("updateCurrency", () => {
 
   beforeEach(() => {
     mockClient = {
+      // Currency writes read current values first, then PUT the full set.
+      get: vi.fn().mockResolvedValue({ currencies: { cp: 0, sp: 0, gp: 0, ep: 0, pp: 0 } }),
       put: vi.fn().mockResolvedValue({}),
     } as unknown as DdbClient;
   });
@@ -287,8 +289,8 @@ describe("updateCurrency", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/inventory/currency"),
-      { gp: 150 },
+      expect.stringContaining("/character/v5/inventory/currency"),
+      { characterId: 123, cp: 0, sp: 0, gp: 150, ep: 0, pp: 0 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Set GP to 150");
@@ -305,8 +307,8 @@ describe("updateCurrency", () => {
       });
 
       expect(mockClient.put).toHaveBeenCalledWith(
-        expect.anything(),
-        { [currency]: 10 },
+        expect.stringContaining("/character/v5/inventory/currency"),
+        expect.objectContaining({ characterId: 123, [currency]: 10 }),
         ["character:123"]
       );
     }

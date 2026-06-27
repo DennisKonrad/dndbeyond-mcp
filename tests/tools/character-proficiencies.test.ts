@@ -2,7 +2,17 @@ import { describe, it, expect, vi } from "vitest";
 import { getCharacter } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
-import type { DdbCampaign } from "../../src/types/api.js";
+
+// Character lookup-by-name resolves via getUserId() + the /characters/list endpoint.
+vi.mock("../../src/api/auth.js", () => ({
+  getUserId: vi.fn().mockResolvedValue(2),
+}));
+
+const mockUserCharacters = {
+  characters: [
+    { id: 12345, name: "Thorin Ironforge", level: 5, raceName: "Mountain Dwarf", classDescription: "Fighter", campaignName: "Test Campaign" },
+  ],
+};
 
 function createMockClient(): DdbClient {
   return {
@@ -10,21 +20,6 @@ function createMockClient(): DdbClient {
     getRaw: vi.fn(),
   } as unknown as DdbClient;
 }
-
-const mockCampaigns: DdbCampaign[] = [
-  {
-    id: 999,
-    name: "Test Campaign",
-    dmId: 1,
-    dmUsername: "dm",
-    playerCount: 1,
-    dateCreated: "1/1/2026",
-  },
-];
-
-const mockCampaignCharacters = [
-  { id: 12345, name: "Thorin", userId: 1, userName: "player1", avatarUrl: "", characterStatus: 0, isAssigned: true },
-];
 
 function createCharacterWithProficiencies(): DdbCharacter {
   return {
@@ -107,8 +102,7 @@ describe("formatProficiencies in character sheet", () => {
     const client = createMockClient();
     const char = createCharacterWithProficiencies();
     vi.mocked(client.get)
-      .mockResolvedValueOnce(mockCampaigns)
-      .mockResolvedValueOnce(mockCampaignCharacters)
+      .mockResolvedValueOnce(mockUserCharacters)
       .mockResolvedValueOnce(char);
 
     const result = await getCharacter(client, { characterName: "Thorin", detail: "sheet" });
@@ -131,8 +125,7 @@ describe("formatProficiencies in character sheet", () => {
     const client = createMockClient();
     const char = createCharacterWithProficiencies();
     vi.mocked(client.get)
-      .mockResolvedValueOnce(mockCampaigns)
-      .mockResolvedValueOnce(mockCampaignCharacters)
+      .mockResolvedValueOnce(mockUserCharacters)
       .mockResolvedValueOnce(char);
 
     const result = await getCharacter(client, { characterName: "Thorin", detail: "sheet" });

@@ -793,7 +793,8 @@ export async function searchItems(
   const lines = [`# Item Search Results (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
   for (const item of matched) {
     const attune = item.requiresAttunement ? " (attunement)" : "";
-    lines.push(`- **${item.name}** — ${item.rarity || "Common"} ${item.filterType || item.type || ""}${attune}`);
+    // id is the entityId used by add_inventory_items.
+    lines.push(`- **${item.name}** (id: ${item.id}) — ${item.rarity || "Common"} ${item.filterType || item.type || ""}${attune}`);
   }
 
   return {
@@ -904,7 +905,7 @@ export async function searchFeats(
     const prereq = feat.prerequisite ? ` (Prerequisite: ${feat.prerequisite})` : "";
     const desc = feat.snippet || feat.description || "";
     const shortDesc = stripHtml(desc).substring(0, 80);
-    lines.push(`- **${feat.name}**${prereq} — ${shortDesc}${shortDesc.length >= 80 ? "..." : ""}`);
+    lines.push(`- **${feat.name}** (id: ${feat.id})${prereq} — ${shortDesc}${shortDesc.length >= 80 ? "..." : ""}`);
   }
 
   return {
@@ -1137,7 +1138,10 @@ export async function searchClasses(
     const spellcasting = cls.spellCastingAbilityId
       ? ` | Spellcasting: ${STAT_NAMES[cls.spellCastingAbilityId] || "Yes"}`
       : "";
-    lines.push(`- **${cls.name}** — Hit Die: ${hitDie}${spellcasting}`);
+    // id is required by add_class / set_class_level. sourceId distinguishes the
+    // 2014 (PHB, e.g. 1) and 2024 (e.g. 145) versions that share a class name.
+    const src = (cls.sources ?? []).map((s) => s.sourceId).join(",");
+    lines.push(`- **${cls.name}** (id: ${cls.id}${src ? `, sourceId: ${src}` : ""}) — Hit Die: ${hitDie}${spellcasting}`);
 
     const desc = stripHtml(cls.description || "").substring(0, 100);
     if (desc) lines.push(`  ${desc}${desc.length >= 100 ? "..." : ""}`);
@@ -1146,6 +1150,50 @@ export async function searchClasses(
   return {
     content: [{ type: "text", text: lines.join("\n") }],
   };
+}
+
+// --- Subclass search ---
+
+interface DdbSubclass {
+  id: number;
+  name: string;
+  description?: string;
+  isHomebrew?: boolean;
+  sources?: Array<{ sourceId: number }>;
+}
+
+/**
+ * List the subclasses for a base class. Subclasses are NOT returned by
+ * search_classes / the classes endpoint; they require the base class id.
+ * Non-SRD subclasses (e.g. Path of the Totem Warrior) only appear when their
+ * source is owned or shared into a campaign — pass campaignId to include those.
+ */
+export async function searchSubclasses(
+  client: DdbClient,
+  params: { baseClassId: number; campaignId?: number }
+): Promise<ToolResult> {
+  const cacheKey = `game-data:subclasses:${params.baseClassId}:${params.campaignId ?? ""}`;
+  const subs = await client.get<DdbSubclass[]>(
+    ENDPOINTS.gameData.subclasses(params.baseClassId, params.campaignId),
+    cacheKey,
+    86_400_000,
+  );
+
+  const matched = subs ?? [];
+  if (matched.length === 0) {
+    const hint = params.campaignId
+      ? ""
+      : " Only SRD/owned subclasses are shown without a campaign — pass campaignId to include subclasses shared by a DM.";
+    return { content: [{ type: "text", text: `No subclasses found for baseClassId ${params.baseClassId}.${hint}` }] };
+  }
+
+  const lines = [`# Subclass Search Results (${matched.length} found for baseClassId ${params.baseClassId})\n`];
+  for (const s of matched) {
+    const src = (s.sources ?? []).map((x) => x.sourceId).join(",");
+    lines.push(`- **${s.name}** (id: ${s.id}${src ? `, sourceId: ${src}` : ""})`);
+  }
+  lines.push(`\nUse the id as choiceValue for the subclass choice (type 7) via set_class_feature_choice.`);
+  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 // --- Race types ---
@@ -1200,7 +1248,9 @@ export async function searchRaces(
     const name = race.fullName || race.baseName;
     const desc = stripHtml(race.description || "").substring(0, 100);
     const legacy = race.isLegacy ? " *(Legacy)*" : "";
-    lines.push(`- **${name}**${legacy} — ${desc}${desc.length >= 100 ? "..." : ""}`);
+    const sub = race.isSubRace ? ", subrace" : "";
+    // IDs are required by set_species / create_character (quick build).
+    lines.push(`- **${name}**${legacy} (entityRaceId: ${race.entityRaceId}, entityRaceTypeId: ${race.entityRaceTypeId}${sub}) — ${desc}${desc.length >= 100 ? "..." : ""}`);
   }
 
   return {
@@ -1250,7 +1300,8 @@ export async function searchBackgrounds(
   const lines = [`# Background Search Results (${matched.length} found)\n`];
   for (const bg of matched) {
     const desc = stripHtml(bg.description || "").substring(0, 100);
-    lines.push(`- **${bg.name}** — ${desc}${desc.length >= 100 ? "..." : ""}`);
+    // id is required by set_background.
+    lines.push(`- **${bg.name}** (id: ${bg.id}) — ${desc}${desc.length >= 100 ? "..." : ""}`);
   }
 
   return {

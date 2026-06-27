@@ -42,9 +42,15 @@ export const ENDPOINTS = {
     updateTraits: () => `${DDB_CHARACTER_SERVICE}/character/v5/description/traits`,
     updateNotes: () => `${DDB_CHARACTER_SERVICE}/character/v5/description/notes`,
     updateAppearance: (field: string) => `${DDB_CHARACTER_SERVICE}/character/v5/description/${field}`,
+    // Current (non-deprecated) write endpoints with characterId in the body
+    setMaxHp: () => `${DDB_CHARACTER_SERVICE}/character/v5/life/hp/override`,
+    customProficiency: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/proficiency`,
     inventory: {
       addItems: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item`,
       setGold: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency/gold`,
+      // Working bulk-currency endpoint (replaces the deprecated per-id path above)
+      currency: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency`,
+      customItem: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/item`,
       setStartingType: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/starting-type`,
     },
     delete: () => `${DDB_CHARACTER_SERVICE}/character/v5/character`,
@@ -56,6 +62,12 @@ export const ENDPOINTS = {
     },
     feats: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/feats`,
     classes: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/classes`,
+    // Subclasses are NOT returned by the classes endpoint; they require baseClassId.
+    // Non-SRD subclasses only appear when the owning source is shared via campaignId.
+    subclasses: (baseClassId: number, campaignId?: number) => {
+      const campaign = campaignId ? `&campaignId=${campaignId}` : "";
+      return `${DDB_CHARACTER_SERVICE}/character/v5/game-data/subclasses?sharingSetting=2&baseClassId=${baseClassId}${campaign}`;
+    },
     races: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/races`,
     backgrounds: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/backgrounds`,
     alwaysKnownSpells: (classId: number, classLevel: number = 20) =>

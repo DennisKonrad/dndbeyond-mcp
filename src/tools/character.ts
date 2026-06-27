@@ -1,5 +1,6 @@
 import type { DdbClient } from "../api/client.js";
 import { ENDPOINTS } from "../api/endpoints.js";
+import { getUserId } from "../api/auth.js";
 import { HttpError } from "../resilience/index.js";
 import type {
   DdbCharacter,
@@ -426,7 +427,7 @@ function formatClassFeatureNames(char: DdbCharacter): string {
 }
 
 function formatRacialTraitNames(char: DdbCharacter): string {
-  const traits = char.race.racialTraits ?? [];
+  const traits = char.race?.racialTraits ?? [];
   if (traits.length === 0) return "None";
   return traits.map((t) => t.definition.name).join(", ");
 }
@@ -505,7 +506,7 @@ function formatHitDice(char: DdbCharacter): string {
 }
 
 function formatTraits(char: DdbCharacter): string {
-  const traits = char.traits;
+  const traits = char.traits ?? {};
   const lines: string[] = [];
 
   if (traits.personalityTraits) lines.push(`Personality: ${traits.personalityTraits}`);
@@ -519,7 +520,7 @@ function formatTraits(char: DdbCharacter): string {
 }
 
 function formatNotes(char: DdbCharacter): string {
-  const notes = char.notes;
+  const notes = char.notes ?? {};
   const lines: string[] = [];
 
   if (notes.backstory) lines.push(`Backstory: ${notes.backstory}`);
@@ -536,7 +537,7 @@ function formatNotes(char: DdbCharacter): string {
 function formatCharacterSheet(char: DdbCharacter): string {
   const sections = [
     `=== ${char.name} ===`,
-    `Race: ${char.race.fullName}`,
+    `Race: ${(char.race?.fullName ?? "No species selected")}`,
     `Class: ${formatClasses(char)}`,
     `Level: ${computeLevel(char)} (Proficiency Bonus: +${calculateProficiencyBonus(computeLevel(char))})`,
     `Background: ${char.background?.definition?.name ?? "None"}`,
@@ -773,13 +774,13 @@ function searchDefinitions(char: DdbCharacter, query: string): DefinitionResult[
   }
 
   // Search racial traits
-  for (const trait of char.race.racialTraits ?? []) {
+  for (const trait of char.race?.racialTraits ?? []) {
     if (trait.definition.name.toLowerCase().includes(q)) {
       results.push({
         type: "Racial Trait",
         name: trait.definition.name,
-        source: char.race.fullName,
-        text: formatRacialTraitDefinition(trait, char.race.fullName),
+        source: (char.race?.fullName ?? "No species selected"),
+        text: formatRacialTraitDefinition(trait, (char.race?.fullName ?? "No species selected")),
       });
     }
   }
@@ -866,9 +867,9 @@ function formatCharacterFull(char: DdbCharacter): string {
   }
 
   // Racial traits
-  const traits = char.race.racialTraits ?? [];
+  const traits = char.race?.racialTraits ?? [];
   if (traits.length > 0) {
-    const traitDefs = traits.map((t) => formatRacialTraitDefinition(t, char.race.fullName));
+    const traitDefs = traits.map((t) => formatRacialTraitDefinition(t, (char.race?.fullName ?? "No species selected")));
     definitionSections.push(`\n=== Racial Trait Definitions ===\n\n${traitDefs.join("\n\n---\n\n")}`);
   }
 
@@ -897,7 +898,7 @@ function formatCharacterFull(char: DdbCharacter): string {
 function formatCharacter(char: DdbCharacter): string {
   const sections = [
     `Name: ${char.name}`,
-    `Race: ${char.race.fullName}`,
+    `Race: ${(char.race?.fullName ?? "No species selected")}`,
     `Class: ${formatClasses(char)}`,
     `Level: ${computeLevel(char)}`,
     `HP: ${formatHp(char)}`,
@@ -918,26 +919,35 @@ function formatCharacter(char: DdbCharacter): string {
   return sections.join("\n");
 }
 
-async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
-  const campaignsResponse = await client.get<DdbCampaign[]>(
-    ENDPOINTS.campaign.list(),
-    "campaigns",
+// Fetch all characters owned by the authenticated user directly from
+// character-service. This replaces the previous campaign-traversal approach,
+// which missed characters not in a campaign and relied on the campaign-list
+// endpoint still returning inline characters (it no longer does).
+interface UserCharacterListEntry {
+  id: number;
+  name: string;
+  level: number;
+  raceName?: string;
+  classDescription?: string;
+  campaignName?: string;
+}
+
+async function fetchUserCharacters(client: DdbClient): Promise<UserCharacterListEntry[]> {
+  const userId = await getUserId();
+  if (userId == null) return [];
+  const data = await client.get<{ characters?: UserCharacterListEntry[] }>(
+    ENDPOINTS.character.list(userId),
+    `characters:list:${userId}`,
     300_000
   );
+  return data?.characters ?? [];
+}
 
-  // Fetch characters from each campaign using the new endpoint
-  const allCharacters: Array<{ id: number; name: string }> = [];
-  for (const campaign of campaignsResponse) {
-    const characters = await client.get<DdbCampaignCharacter2[]>(
-      ENDPOINTS.campaign.characters(campaign.id),
-      `campaign:${campaign.id}:characters`,
-      300_000
-    );
-    allCharacters.push(...characters.map((char) => ({
-      id: char.id,
-      name: char.name,
-    })));
-  }
+async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
+  const allCharacters = (await fetchUserCharacters(client)).map((c) => ({
+    id: c.id,
+    name: c.name.trim(),
+  }));
 
   // 1. Exact match (case-insensitive)
   const exactMatch = allCharacters.find(
@@ -1010,28 +1020,9 @@ export async function getCharacter(
 export async function listCharacters(
   client: DdbClient
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  const campaignsResponse = await client.get<DdbCampaign[]>(
-    ENDPOINTS.campaign.list(),
-    "campaigns",
-    300_000
-  );
+  const characters = await fetchUserCharacters(client);
 
-  // Fetch characters from each campaign using the characters endpoint
-  const allCharacters: Array<{ id: number; name: string; campaignName: string }> = [];
-  for (const campaign of campaignsResponse) {
-    const characters = await client.get<DdbCampaignCharacter2[]>(
-      ENDPOINTS.campaign.characters(campaign.id),
-      `campaign:${campaign.id}:characters`,
-      300_000
-    );
-    allCharacters.push(...characters.map((char) => ({
-      id: char.id,
-      name: char.name,
-      campaignName: campaign.name,
-    })));
-  }
-
-  if (allCharacters.length === 0) {
+  if (characters.length === 0) {
     return {
       content: [
         {
@@ -1042,27 +1033,11 @@ export async function listCharacters(
     };
   }
 
-  const characterDetails = await Promise.all(
-    allCharacters.map(async (char) => {
-      const details = await client.get<DdbCharacter>(
-        ENDPOINTS.character.get(char.id),
-        `character:${char.id}`,
-        60_000
-      );
-      return {
-        name: details.name,
-        race: details.race.fullName,
-        classes: formatClasses(details),
-        level: computeLevel(details),
-        campaign: char.campaignName,
-      };
-    })
-  );
-
-  const lines = characterDetails.map(
-    (char) =>
-      `${char.name} - ${char.race} ${char.classes} (Level ${char.level}) - ${char.campaign}`
-  );
+  const lines = characters.map((c) => {
+    const descriptor = [c.raceName, c.classDescription].filter(Boolean).join(" ").trim();
+    const campaign = c.campaignName ? ` - ${c.campaignName}` : "";
+    return `${c.name.trim()} - ${descriptor} (Level ${c.level})${campaign}`;
+  });
 
   return {
     content: [
@@ -1412,52 +1387,46 @@ export async function updateCurrency(
     };
   }
 
+  // The current currency write endpoint (/inventory/currency) replaces the full
+  // currency object, so fetch the existing values, change the requested one, and
+  // send all five. (The old per-character path is deprecated and returns 404.)
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    `character:${params.characterId}`,
+    60_000
+  );
+  const currencies = {
+    cp: character.currencies?.cp ?? 0,
+    sp: character.currencies?.sp ?? 0,
+    gp: character.currencies?.gp ?? 0,
+    ep: character.currencies?.ep ?? 0,
+    pp: character.currencies?.pp ?? 0,
+  };
+  const current = currencies[params.currency];
+
   let finalAmount: number;
   let description: string;
-
   if (params.delta !== undefined) {
-    // Delta mode: fetch current currency and add/subtract
-    const character = await client.get<DdbCharacter>(
-      ENDPOINTS.character.get(params.characterId),
-      `character:${params.characterId}`,
-      60_000
-    );
-    const current = character.currencies[params.currency];
     finalAmount = Math.max(0, current + params.delta);
-
-    if (params.delta > 0) {
-      description = `Added ${params.delta} ${params.currency.toUpperCase()} (${current} → ${finalAmount})`;
-    } else {
-      description = `Spent ${Math.abs(params.delta)} ${params.currency.toUpperCase()} (${current} → ${finalAmount})`;
-    }
+    description =
+      params.delta >= 0
+        ? `Added ${params.delta} ${params.currency.toUpperCase()} (${current} → ${finalAmount})`
+        : `Spent ${Math.abs(params.delta)} ${params.currency.toUpperCase()} (${current} → ${finalAmount})`;
   } else {
     finalAmount = params.amount!;
     description = `Set ${params.currency.toUpperCase()} to ${finalAmount}`;
   }
+  currencies[params.currency] = finalAmount;
 
-  try {
-    await client.put(
-      ENDPOINTS.character.updateCurrency(params.characterId),
-      { [params.currency]: finalAmount },
-      [`character:${params.characterId}`]
-    );
+  await client.put(
+    ENDPOINTS.character.inventory.currency(),
+    { characterId: params.characterId, ...currencies },
+    [`character:${params.characterId}`]
+  );
 
-    return {
-      content: [{ type: "text", text: `${description}.` }],
-    };
-  } catch (error) {
-    if (error instanceof HttpError && error.statusCode === 404) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `⚠️  Currency updates are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
-          },
-        ],
-      };
-    }
-    throw error;
-  }
+  return {
+    content: [{ type: "text", text: `${description}.` }],
+  };
 }
 
 interface UpdatePactMagicParams {
@@ -2077,6 +2046,90 @@ export async function setGold(
     [`character:${params.characterId}`]
   );
   return { content: [{ type: "text", text: `Set gold to ${params.amount} on character ${params.characterId}.` }] };
+}
+
+interface SetMaxHpParams {
+  characterId: number;
+  maxHp: number;
+}
+
+/**
+ * Override a character's maximum hit points to a fixed value.
+ * Useful for fixed / manually-entered HP totals (e.g. imported characters or
+ * house-rule HP). update_hp only applies damage/healing; this sets the maximum.
+ */
+export async function setMaxHp(
+  client: DdbClient,
+  params: SetMaxHpParams
+): Promise<ToolResult> {
+  await client.put(
+    ENDPOINTS.character.setMaxHp(),
+    { characterId: params.characterId, overrideHitPoints: params.maxHp },
+    [`character:${params.characterId}`]
+  );
+  return { content: [{ type: "text", text: `Set max HP override to ${params.maxHp} on character ${params.characterId}.` }] };
+}
+
+const CUSTOM_PROFICIENCY_TYPES: Record<number, string> = { 1: "skill", 2: "tool", 3: "language" };
+
+interface AddCustomProficiencyParams {
+  characterId: number;
+  name: string;
+  type: number; // 1 = skill, 2 = tool, 3 = language
+  proficiencyLevel?: number; // 1 = half, 2 = proficient, 3 = expertise (default 2)
+}
+
+/**
+ * Add a custom proficiency (skill, tool, or language) — D&D Beyond's
+ * "Manage Custom Proficiencies" feature. Useful for proficiencies that aren't
+ * available as standard builder choices (e.g. a custom background's tool, or a
+ * rare language like Undercommon).
+ */
+export async function addCustomProficiency(
+  client: DdbClient,
+  params: AddCustomProficiencyParams
+): Promise<ToolResult> {
+  await client.post(
+    ENDPOINTS.character.customProficiency(),
+    {
+      characterId: params.characterId,
+      name: params.name,
+      type: params.type,
+      proficiencyLevel: params.proficiencyLevel ?? 2,
+    },
+    [`character:${params.characterId}`]
+  );
+  const kind = CUSTOM_PROFICIENCY_TYPES[params.type] ?? "proficiency";
+  return { content: [{ type: "text", text: `Added custom ${kind} proficiency "${params.name}" to character ${params.characterId}.` }] };
+}
+
+interface AddCustomItemParams {
+  characterId: number;
+  name: string;
+  description?: string;
+  quantity?: number;
+}
+
+/**
+ * Add a custom (homebrew) item to a character's inventory — for items with no
+ * D&D Beyond definition (e.g. house-rule potions, quest items like a sealed
+ * casket). For items that DO have a definition, use add_inventory_items instead.
+ */
+export async function addCustomItem(
+  client: DdbClient,
+  params: AddCustomItemParams
+): Promise<ToolResult> {
+  await client.post(
+    ENDPOINTS.character.inventory.customItem(),
+    {
+      characterId: params.characterId,
+      name: params.name,
+      description: params.description ?? "",
+      quantity: params.quantity ?? 1,
+    },
+    [`character:${params.characterId}`]
+  );
+  return { content: [{ type: "text", text: `Added custom item "${params.name}" (x${params.quantity ?? 1}) to character ${params.characterId}.` }] };
 }
 
 // ============================================================================

@@ -41,6 +41,9 @@ import {
   setStartingEquipmentType,
   addInventoryItems,
   setGold,
+  setMaxHp,
+  addCustomProficiency,
+  addCustomItem,
   updateDescription,
 } from "./tools/character.js";
 import { listCampaigns, getCampaignCharacters } from "./tools/campaign.js";
@@ -54,6 +57,7 @@ import {
   searchFeats,
   getCondition,
   searchClasses,
+  searchSubclasses,
   searchRaces,
   searchBackgrounds,
   searchClassFeatures,
@@ -269,6 +273,56 @@ export async function startServer(): Promise<void> {
         currency: params.currency,
         amount: params.amount,
         delta: params.delta,
+      })
+  );
+
+  server.tool(
+    "set_max_hp",
+    "Override a character's maximum hit points to a fixed value. Use this for fixed or manually-entered HP totals (update_hp only applies damage/healing).",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      maxHp: z.coerce.number().describe("The maximum HP value to set as an override"),
+    },
+    async (params) =>
+      setMaxHp(client, {
+        characterId: params.characterId,
+        maxHp: params.maxHp,
+      })
+  );
+
+  server.tool(
+    "add_custom_proficiency",
+    "Add a custom proficiency (skill, tool, or language) via D&D Beyond's Custom Proficiencies feature. Use for proficiencies not available as standard builder choices (e.g. a custom background's tool, or a rare language like Undercommon).",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      name: z.string().describe("Proficiency name (e.g. 'Cartographer's Tools', 'Undercommon')"),
+      type: z.coerce.number().describe("Proficiency type: 1=skill, 2=tool, 3=language"),
+      proficiencyLevel: z.coerce.number().optional().describe("1=half, 2=proficient, 3=expertise (default 2)"),
+    },
+    async (params) =>
+      addCustomProficiency(client, {
+        characterId: params.characterId,
+        name: params.name,
+        type: params.type,
+        proficiencyLevel: params.proficiencyLevel,
+      })
+  );
+
+  server.tool(
+    "add_custom_item",
+    "Add a custom (homebrew) item to a character's inventory — for items with no D&D Beyond definition (e.g. house-rule potions, quest items). For items that have a definition, use add_inventory_items instead.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      name: z.string().describe("Item name"),
+      description: z.string().optional().describe("Item description / notes"),
+      quantity: z.coerce.number().optional().describe("Quantity (default 1)"),
+    },
+    async (params) =>
+      addCustomItem(client, {
+        characterId: params.characterId,
+        name: params.name,
+        description: params.description,
+        quantity: params.quantity,
       })
   );
 
@@ -529,11 +583,11 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "set_ability_score",
-    "Set an ability score value for a character. statId: 1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA. type: 1=standard array, 2=rolled, 3=point buy.",
+    "Set an ability score for a character. statId: 1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA. IMPORTANT: 'type' selects which underlying array is written, NOT the generation method: 1=base score (the rolled/array/point-buy value, before racial/ASI bonuses), 2=misc bonus (added on top of base+racial), 3=override (replaces the final total, ignoring base/racial/bonuses). Use 1 to set base scores; use 3 to force exact final totals (e.g. imported characters). Set the generation method separately with set_ability_score_type.",
     {
       characterId: z.coerce.number().describe("The character ID"),
       statId: z.coerce.number().describe("Ability stat ID (1=STR, 2=DEX, 3=CON, 4=INT, 5=WIS, 6=CHA)"),
-      type: z.coerce.number().describe("Score type (1=standard array, 2=rolled, 3=point buy)"),
+      type: z.coerce.number().describe("Target array: 1=base score, 2=misc bonus, 3=override (final total)"),
       value: z.coerce.number().describe("The ability score value"),
     },
     async (params) =>
@@ -821,13 +875,27 @@ export async function startServer(): Promise<void> {
   // Register reference tools - classes
   server.tool(
     "search_classes",
-    "Search for character classes and subclasses",
+    "Search for character classes. Output includes each class id (for add_class/set_class_level) and sourceId (to tell the 2014 vs 2024 version apart). Subclasses are listed separately via search_subclasses.",
     {
       className: z.string().optional().describe("Class name (partial match)"),
     },
     async (params) =>
       searchClasses(client, {
         className: params.className,
+      })
+  );
+
+  server.tool(
+    "search_subclasses",
+    "List subclasses for a base class (by base class id, e.g. 9 = 2014 Barbarian). Subclasses are not returned by search_classes. Non-SRD subclasses only appear when their source is owned or shared into a campaign — pass campaignId to include DM-shared subclasses. Returns each subclass id for use as the type-7 subclass choiceValue in set_class_feature_choice.",
+    {
+      baseClassId: z.coerce.number().describe("The base class definition id (from search_classes)"),
+      campaignId: z.coerce.number().optional().describe("Campaign id to include subclasses shared by the DM"),
+    },
+    async (params) =>
+      searchSubclasses(client, {
+        baseClassId: params.baseClassId,
+        campaignId: params.campaignId,
       })
   );
 
