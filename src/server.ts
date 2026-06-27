@@ -556,7 +556,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "resolve_choices",
-    "Auto-resolve all unresolved builder choices on a character by picking the first available option for each. Handles cascading choices (resolving one may unlock more). Use after create_character to make the character builder-complete.",
+    "Auto-resolve all unresolved builder choices on a character by picking the FIRST available option for each. Handles cascading choices (resolving one may unlock more). Use after create_character to make the character builder-complete. CAUTION: 'first option' is often wrong for meaningful choices — e.g. skill picks, weapon-mastery weapons, and subclass options (Rage of the Wilds Bear/Eagle/Wolf) draw from a combined pool where the first entry may be an arbitrary weapon or an unwanted skill. Set those explicitly with set_class_feature_choice / set_feat_choice afterward. NOTE: once resolved, a choice's id gains a suffix (e.g. '3-1675296-513991331'); pass that FULL id as choiceKey when overriding it — the base id ('3-1675296') silently no-ops.",
     {
       characterId: z.coerce.number().describe("The character ID"),
     },
