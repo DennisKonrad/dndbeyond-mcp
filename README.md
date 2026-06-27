@@ -36,6 +36,12 @@ npx dndbeyond-mcp setup
 
 This opens a browser window where you log into D&D Beyond normally. The server captures your session cookie automatically and saves it to `~/.dndbeyond-mcp/config.json`.
 
+By default the login flow launches your installed Chrome. To use a specific browser binary (e.g. on NixOS), set `DNDBEYOND_MCP_BROWSER_PATH` to its path:
+
+```bash
+DNDBEYOND_MCP_BROWSER_PATH=/run/current-system/sw/bin/chromium npx dndbeyond-mcp setup
+```
+
 ## Claude Desktop Configuration
 
 Add this to your Claude Desktop configuration file:

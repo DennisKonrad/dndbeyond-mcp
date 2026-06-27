@@ -7,9 +7,13 @@ export async function runAuthFlow(): Promise<void> {
   console.error("Opening browser for D&D Beyond login...");
   console.error("Please log in normally. The browser will close when authentication is detected.");
 
+  // Browser binary: set DNDBEYOND_MCP_BROWSER_PATH to an explicit Chromium/Chrome
+  // executable (e.g. on NixOS: /run/current-system/sw/bin/chromium). When unset,
+  // Playwright uses the locally installed Chrome channel.
+  const browserPath = process.env.DNDBEYOND_MCP_BROWSER_PATH;
   const browser = await chromium.launch({
     headless: false,
-    channel: "chrome",
+    ...(browserPath ? { executablePath: browserPath } : { channel: "chrome" }),
     args: [
       "--disable-blink-features=AutomationControlled",
       "--disable-infobars",
