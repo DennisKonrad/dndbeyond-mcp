@@ -2,6 +2,11 @@
   "name": "dndbeyond-mcp",
   "version": "0.1.0",
   "description": "MCP server for D&D Beyond",
+  "author": "Alex Worland <alexworland@gmail.com> (https://github.com/AlexWorland)",
+  "contributors": [
+    "Dennis Konrad <d.konrad@surnis.de>"
+  ],
+  "license": "MIT",
   "type": "module",
   "main": "build/src/index.js",
   "bin": {

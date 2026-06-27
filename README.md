@@ -109,6 +109,18 @@ After adding the configuration, restart Claude Desktop.
 
 This server stores your D&D Beyond session cookie locally at `~/.dndbeyond-mcp/config.json`. The cookie provides full access to your D&D Beyond account. Never share this file. The server only communicates with `dndbeyond.com` domains.
 
+## Credits
+
+Originally created by **Alex Worland** ([@AlexWorland](https://github.com/AlexWorland)) — original repository: https://github.com/AlexWorland/dndbeyond-mcp
+
+This fork, maintained by **Dennis Konrad**, adds to the character builder:
+
+- Entity IDs in `search_races` / `search_classes` / `search_backgrounds` / `search_feats` / `search_items` output (required by the write tools)
+- New tools: `search_subclasses`, `set_max_hp`, `add_custom_proficiency`, `add_custom_item`, `equip_item`
+- Fixed `update_currency` (the deprecated endpoint was replaced with the working one)
+- Corrected `set_ability_score` docs (base vs. bonus vs. override) and a `resolve_choices` caveat
+- Test fixes after the character-list / race-shape refactor
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
