@@ -1390,14 +1390,15 @@ export async function updateHp(
     )
   );
 
-  const putBody: { characterId: number; removedHitPoints: number; temporaryHitPoints?: number } = {
+  // temporaryHitPoints is a REQUIRED field on the damage-taken endpoint — omitting
+  // it yields 400 "Missing required field: temporaryHitPoints" (verified via the
+  // response body). Preserve the character's current temp HP when the caller
+  // didn't explicitly set one.
+  const putBody = {
     characterId: params.characterId,
     removedHitPoints: newRemovedHp,
+    temporaryHitPoints: params.tempHp ?? character.temporaryHitPoints,
   };
-
-  if (params.tempHp !== undefined) {
-    putBody.temporaryHitPoints = params.tempHp;
-  }
 
   await client.put(
     ENDPOINTS.character.updateHp(),

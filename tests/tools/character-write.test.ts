@@ -106,7 +106,7 @@ describe("updateHp", () => {
 
     expect(mockClient.put).toHaveBeenCalledWith(
       expect.stringContaining("/character/v5/life/hp/damage-taken"),
-      { characterId: 123, removedHitPoints: 0 },
+      { characterId: 123, removedHitPoints: 0, temporaryHitPoints: 0 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Healed Test Character for 10 HP");
@@ -125,7 +125,7 @@ describe("updateHp", () => {
 
     expect(mockClient.put).toHaveBeenCalledWith(
       expect.stringContaining("/character/v5/life/hp/damage-taken"),
-      { characterId: 123, removedHitPoints: 15 },
+      { characterId: 123, removedHitPoints: 15, temporaryHitPoints: 0 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Damaged Test Character for 5 HP");
@@ -139,7 +139,7 @@ describe("updateHp", () => {
 
     expect(mockClient.put).toHaveBeenCalledWith(
       expect.anything(),
-      { characterId: 123, removedHitPoints: 55 },
+      { characterId: 123, removedHitPoints: 55, temporaryHitPoints: 0 },
       expect.anything()
     );
   });
@@ -412,7 +412,9 @@ describe("updateHp with temporary HP", () => {
     expect(result.content[0].text).toContain("(10 temp HP)");
   });
 
-  it("should not include temporaryHitPoints when tempHp is undefined", async () => {
+  it("sends the character's current temporaryHitPoints when tempHp is undefined", async () => {
+    // temporaryHitPoints is required by the endpoint; when the caller omits it
+    // we must still send the current value (here 0) rather than dropping it.
     await updateHp(mockClient, {
       characterId: 123,
       hpChange: 5,
@@ -420,7 +422,7 @@ describe("updateHp with temporary HP", () => {
 
     expect(mockClient.put).toHaveBeenCalledWith(
       expect.stringContaining("/character/v5/life/hp/damage-taken"),
-      { characterId: 123, removedHitPoints: 5 },
+      { characterId: 123, removedHitPoints: 5, temporaryHitPoints: 0 },
       ["character:123"]
     );
   });
