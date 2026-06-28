@@ -104,31 +104,29 @@ export function calculateAc(char: DdbCharacter): number {
 
     const itemType = item.definition.type?.toLowerCase() || "";
     const filterType = item.definition.filterType?.toLowerCase() || "";
+    // Body armor has an empty `type` on D&D Beyond; the armor/shield class lives
+    // in `armorTypeId` (1=light, 2=medium, 3=heavy, 4=shield) with filterType "Armor".
+    const armorTypeId = item.definition.armorTypeId;
+
+    const isArmorItem = filterType === "armor" || itemType.includes("armor") || itemType.includes("shield");
+    if (!isArmorItem) continue;
 
     // Check for shield
-    if (itemType.includes("shield")) {
+    if (armorTypeId === 4 || itemType.includes("shield")) {
       shieldBonus = item.definition.armorClass ?? 2;
       continue;
     }
 
-    // Check for armor
-    if (itemType.includes("armor")) {
-      const acValue = item.definition.armorClass ?? 10;
-
-      if (filterType.includes("heavy") || itemType.includes("heavy")) {
-        baseAc = acValue;
-        armorType = "heavy";
-      } else if (filterType.includes("medium") || itemType.includes("medium")) {
-        baseAc = acValue;
-        armorType = "medium";
-      } else if (filterType.includes("light") || itemType.includes("light")) {
-        baseAc = acValue;
-        armorType = "light";
-      } else {
-        // Default to light armor if type unclear
-        baseAc = acValue;
-        armorType = "light";
-      }
+    // Body armor — classify by armorTypeId, falling back to the type/filterType strings
+    const acValue = item.definition.armorClass ?? 10;
+    baseAc = acValue;
+    if (armorTypeId === 3 || filterType.includes("heavy") || itemType.includes("heavy")) {
+      armorType = "heavy";
+    } else if (armorTypeId === 2 || filterType.includes("medium") || itemType.includes("medium")) {
+      armorType = "medium";
+    } else {
+      // armorTypeId === 1 or unclear → treat as light
+      armorType = "light";
     }
   }
 

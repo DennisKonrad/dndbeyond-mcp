@@ -301,6 +301,56 @@ describe("calculateAc", () => {
     expect(result).toBe(14); // 10 + 2 (DEX) + 2 (shield)
   });
 
+  // Real D&D Beyond body armor has an empty `type` and filterType "Armor";
+  // the class is carried by armorTypeId (1=light, 2=medium, 3=heavy, 4=shield).
+  it("should detect light armor by armorTypeId when type is empty", () => {
+    const char = {
+      ...baseChar,
+      inventory: [
+        {
+          id: 1,
+          definition: { name: "Studded Leather", type: "", filterType: "Armor", armorTypeId: 1, armorClass: 12, description: "", isHomebrew: false },
+          equipped: true,
+          quantity: 1,
+        },
+      ],
+    } as unknown as DdbCharacter;
+
+    expect(calculateAc(char)).toBe(14); // 12 + 2 (DEX), full DEX for light
+  });
+
+  it("should detect heavy armor by armorTypeId when type is empty (no DEX)", () => {
+    const char = {
+      ...baseChar,
+      inventory: [
+        {
+          id: 1,
+          definition: { name: "Plate", type: "", filterType: "Armor", armorTypeId: 3, armorClass: 18, description: "", isHomebrew: false },
+          equipped: true,
+          quantity: 1,
+        },
+      ],
+    } as unknown as DdbCharacter;
+
+    expect(calculateAc(char)).toBe(18); // heavy: no DEX
+  });
+
+  it("should detect a shield by armorTypeId 4 when type is empty", () => {
+    const char = {
+      ...baseChar,
+      inventory: [
+        {
+          id: 1,
+          definition: { name: "Shield", type: "", filterType: "Armor", armorTypeId: 4, armorClass: 2, description: "", isHomebrew: false },
+          equipped: true,
+          quantity: 1,
+        },
+      ],
+    } as unknown as DdbCharacter;
+
+    expect(calculateAc(char)).toBe(14); // 10 + 2 (DEX) + 2 (shield)
+  });
+
   it("should calculate Barbarian unarmored defense (10 + DEX + CON)", () => {
     const barbarian = {
       ...baseChar,
