@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -534,5 +534,65 @@ describe("removePartyInventoryItem", () => {
 
     expect(mockClient.delete).not.toHaveBeenCalled();
     expect(result.content[0].text).toContain("No party-inventory item with id 999999");
+  });
+});
+
+describe("updatePartyInventoryItem", () => {
+  let mockClient: DdbClient;
+
+  beforeEach(() => {
+    mockClient = {
+      get: vi.fn().mockResolvedValue({
+        partyItems: [
+          {
+            id: 1045149692,
+            quantity: 1,
+            definition: { id: 35675618, name: "Bierfass", weight: 39, cost: null, description: "Ein Fass Bier" },
+          },
+        ],
+      }),
+      put: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+  });
+
+  it("should PUT only changed fields and preserve the rest from the current item", async () => {
+    const result = await updatePartyInventoryItem(mockClient, {
+      campaignId: 7869524,
+      characterId: 167132826,
+      itemId: 1045149692,
+      weight: 40,
+    });
+
+    expect(mockClient.invalidateCache).toHaveBeenCalledWith("campaign:7869524:party-inventory");
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5.1/custom/item"),
+      {
+        characterId: 167132826,
+        id: 35675618,
+        mappingId: 1045149692,
+        partyId: 7869524,
+        name: "Bierfass",          // preserved
+        weight: 40,                 // changed
+        cost: null,                 // preserved
+        quantity: 1,                // preserved
+        description: "Ein Fass Bier", // preserved
+        notes: "",                  // not readable -> empty unless supplied
+      },
+      ["campaign:7869524:party-inventory"]
+    );
+    expect(result.content[0].text).toContain('Updated "Bierfass"');
+  });
+
+  it("should not call put when the item id is not present", async () => {
+    const result = await updatePartyInventoryItem(mockClient, {
+      campaignId: 7869524,
+      characterId: 167132826,
+      itemId: 111,
+      weight: 10,
+    });
+
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("No party-inventory item with id 111");
   });
 });

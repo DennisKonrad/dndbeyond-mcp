@@ -2481,6 +2481,64 @@ export async function removePartyInventoryItem(
   };
 }
 
+interface UpdatePartyInventoryItemParams {
+  campaignId: number;
+  characterId: number;
+  itemId: number; // party-inventory entry id (partyItems[].id)
+  name?: string;
+  weight?: number;
+  cost?: number;
+  quantity?: number;
+  description?: string;
+  notes?: string;
+}
+
+export async function updatePartyInventoryItem(
+  client: DdbClient,
+  params: UpdatePartyInventoryItemParams
+): Promise<ToolResult> {
+  const cacheKey = `campaign:${params.campaignId}:party-inventory`;
+  // Re-read fresh: PUT replaces the whole item, so unspecified fields must be
+  // merged from the current state (which may have changed since last cached).
+  client.invalidateCache(cacheKey);
+  const inventory = await client.get<DdbPartyInventory>(
+    ENDPOINTS.campaign.partyInventory(params.campaignId),
+    cacheKey,
+    5 * 60 * 1000
+  );
+
+  const entry = (inventory?.partyItems ?? []).find((i) => i.id === params.itemId);
+  if (!entry) {
+    return { content: [{ type: "text", text: `No party-inventory item with id ${params.itemId} in campaign ${params.campaignId}.` }] };
+  }
+  const def = entry.definition;
+  if (def.id == null) {
+    return { content: [{ type: "text", text: `Item "${def.name}" (${params.itemId}) has no custom-item definition id and cannot be edited this way.` }] };
+  }
+
+  // Merge provided changes over current values. `notes` is NOT returned by the
+  // read endpoint, so it defaults to empty unless the caller supplies it.
+  await client.put(
+    ENDPOINTS.character.inventory.partyCustomItem(),
+    {
+      characterId: params.characterId,
+      id: def.id,
+      mappingId: params.itemId,
+      partyId: params.campaignId,
+      name: params.name ?? def.name,
+      weight: params.weight ?? def.weight ?? null,
+      cost: params.cost ?? def.cost ?? null,
+      quantity: params.quantity ?? entry.quantity,
+      description: params.description ?? def.description ?? "",
+      notes: params.notes ?? "",
+    },
+    [cacheKey]
+  );
+  return {
+    content: [{ type: "text", text: `Updated "${params.name ?? def.name}" in the party inventory of campaign ${params.campaignId}.` }],
+  };
+}
+
 // ============================================================================
 // DESCRIPTION FIELDS
 // ============================================================================

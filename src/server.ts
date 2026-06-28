@@ -48,6 +48,7 @@ import {
   addCustomItem,
   addPartyInventoryItem,
   removePartyInventoryItem,
+  updatePartyInventoryItem,
   updateDescription,
 } from "./tools/character.js";
 import { listCampaigns, getCampaignCharacters } from "./tools/campaign.js";
@@ -367,6 +368,34 @@ export async function startServer(): Promise<void> {
         quantity: params.quantity,
         weight: params.weight,
         cost: params.cost,
+      })
+  );
+
+  server.tool(
+    "update_party_inventory_item",
+    "Edit a custom item in a campaign's shared party inventory in place (keeps its entry id). itemId is the [ID: ...] from get_campaign_characters. Only the fields you pass are changed; the rest are preserved from the current item — EXCEPT notes, which the read endpoint does not expose, so pass notes again if you want to keep them.",
+    {
+      campaignId: z.coerce.number().describe("The campaign ID"),
+      characterId: z.coerce.number().describe("ID of one of your characters in that campaign (the acting member)"),
+      itemId: z.coerce.number().describe("The party-inventory entry id ([ID: ...] from get_campaign_characters)"),
+      name: z.string().optional().describe("New name"),
+      weight: z.coerce.number().optional().describe("New weight in lb"),
+      cost: z.coerce.number().optional().describe("New cost in gp"),
+      quantity: z.coerce.number().optional().describe("New quantity"),
+      description: z.string().optional().describe("New description"),
+      notes: z.string().optional().describe("Notes (not preserved automatically — pass to keep/set)"),
+    },
+    async (params) =>
+      updatePartyInventoryItem(client, {
+        campaignId: params.campaignId,
+        characterId: params.characterId,
+        itemId: params.itemId,
+        name: params.name,
+        weight: params.weight,
+        cost: params.cost,
+        quantity: params.quantity,
+        description: params.description,
+        notes: params.notes,
       })
   );
 

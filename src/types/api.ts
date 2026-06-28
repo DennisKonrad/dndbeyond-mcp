@@ -52,10 +52,14 @@ export interface DdbPartyInventoryItem {
   id: number; // party-inventory entry id (the DELETE "mappingId")
   quantity: number;
   definition: {
-    id?: number; // custom-item definition id (the DELETE "id")
+    id?: number; // custom-item definition id (the DELETE/PUT "id")
     name: string;
     filterType?: string;
     type?: string;
+    weight?: number | null;
+    cost?: number | null;
+    description?: string;
+    // NB: the party-inventory GET does NOT return `notes`, so it cannot be preserved on edit.
   };
 }
 
