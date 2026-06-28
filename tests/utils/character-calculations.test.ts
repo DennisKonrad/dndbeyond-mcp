@@ -392,63 +392,72 @@ describe("computeLevel", () => {
   });
 });
 
-describe("calculateMaxHp", () => {
-  it("should return base + bonus when no override", () => {
-    const char = {
-      baseHitPoints: 42,
-      bonusHitPoints: 5,
-      overrideHitPoints: null,
-    } as unknown as DdbCharacter;
+// Builds a minimal character for HP math. `con` is the final CON score,
+// `level` the total class level, `hpPerLevel` an optional Tough-style bonus.
+function hpChar(opts: {
+  baseHitPoints: number;
+  bonusHitPoints?: number | null;
+  overrideHitPoints?: number | null;
+  removedHitPoints?: number;
+  con?: number;
+  level?: number;
+  hpPerLevel?: number;
+}): DdbCharacter {
+  const modifiers: Record<string, unknown[]> = { class: [] };
+  if (opts.hpPerLevel) {
+    modifiers.class = [{ type: "bonus", subType: "hit-points-per-level", value: opts.hpPerLevel }];
+  }
+  return {
+    baseHitPoints: opts.baseHitPoints,
+    bonusHitPoints: opts.bonusHitPoints ?? null,
+    overrideHitPoints: opts.overrideHitPoints ?? null,
+    removedHitPoints: opts.removedHitPoints ?? 0,
+    stats: [{ id: 3, value: opts.con ?? 10 }],
+    bonusStats: [],
+    overrideStats: [],
+    modifiers,
+    classes: [{ level: opts.level ?? 1 }],
+  } as unknown as DdbCharacter;
+}
 
-    const result = calculateMaxHp(char);
+describe("calculateMaxHp", () => {
+  it("should return base + bonus when CON is +0", () => {
+    const result = calculateMaxHp(hpChar({ baseHitPoints: 42, bonusHitPoints: 5, con: 10, level: 5 }));
     expect(result).toBe(47);
   });
 
-  it("should return override when present", () => {
-    const char = {
-      baseHitPoints: 42,
-      bonusHitPoints: 5,
-      overrideHitPoints: 100,
-    } as unknown as DdbCharacter;
+  it("should add the Constitution modifier per level", () => {
+    // base 22 + CON 18 (+4) * 3 levels = 34
+    const result = calculateMaxHp(hpChar({ baseHitPoints: 22, con: 18, level: 3 }));
+    expect(result).toBe(34);
+  });
 
-    const result = calculateMaxHp(char);
+  it("should add hit-points-per-level bonuses (e.g. Tough) on top of CON", () => {
+    // base 20 + (CON +1 + Tough +2) * 4 levels = 20 + 12 = 32
+    const result = calculateMaxHp(hpChar({ baseHitPoints: 20, con: 12, level: 4, hpPerLevel: 2 }));
+    expect(result).toBe(32);
+  });
+
+  it("should return override when present, ignoring CON", () => {
+    const result = calculateMaxHp(hpChar({ baseHitPoints: 42, bonusHitPoints: 5, overrideHitPoints: 100, con: 18, level: 5 }));
     expect(result).toBe(100);
   });
 
   it("should handle null bonus", () => {
-    const char = {
-      baseHitPoints: 42,
-      bonusHitPoints: null,
-      overrideHitPoints: null,
-    } as unknown as DdbCharacter;
-
-    const result = calculateMaxHp(char);
+    const result = calculateMaxHp(hpChar({ baseHitPoints: 42, bonusHitPoints: null, con: 10, level: 5 }));
     expect(result).toBe(42);
   });
 });
 
 describe("calculateCurrentHp", () => {
   it("should return max - removed", () => {
-    const char = {
-      baseHitPoints: 42,
-      bonusHitPoints: 5,
-      overrideHitPoints: null,
-      removedHitPoints: 10,
-    } as unknown as DdbCharacter;
-
-    const result = calculateCurrentHp(char);
-    expect(result).toBe(37); // 47 - 10
+    // base 42 + bonus 5 + CON +0 = 47, minus 10 removed
+    const result = calculateCurrentHp(hpChar({ baseHitPoints: 42, bonusHitPoints: 5, removedHitPoints: 10, con: 10, level: 5 }));
+    expect(result).toBe(37);
   });
 
   it("should handle zero damage", () => {
-    const char = {
-      baseHitPoints: 42,
-      bonusHitPoints: null,
-      overrideHitPoints: null,
-      removedHitPoints: 0,
-    } as unknown as DdbCharacter;
-
-    const result = calculateCurrentHp(char);
+    const result = calculateCurrentHp(hpChar({ baseHitPoints: 42, removedHitPoints: 0, con: 10, level: 5 }));
     expect(result).toBe(42);
   });
 });

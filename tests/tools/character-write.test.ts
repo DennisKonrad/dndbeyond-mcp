@@ -133,7 +133,7 @@ describe("updateHp", () => {
 
     expect(mockClient.put).toHaveBeenCalledWith(
       expect.anything(),
-      { characterId: 123, removedHitPoints: 45 },
+      { characterId: 123, removedHitPoints: 55 },
       expect.anything()
     );
   });

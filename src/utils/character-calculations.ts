@@ -63,10 +63,25 @@ export function computeLevel(char: DdbCharacter): number {
 }
 
 export function calculateMaxHp(char: DdbCharacter): number {
+  // An explicit override is the absolute total — ignore everything else.
+  if (char.overrideHitPoints != null) return char.overrideHitPoints;
+
+  // D&D Beyond's baseHitPoints is the sum of hit dice only; the Constitution
+  // contribution (and any hit-points-per-level bonus such as the Tough feat or
+  // Hill Dwarf toughness) is applied per level on top of it.
   const base = char.baseHitPoints;
   const bonus = char.bonusHitPoints ?? 0;
-  const override = char.overrideHitPoints;
-  return override ?? (base + bonus);
+  const level = computeLevel(char);
+  const conScore = computeFinalAbilityScore(
+    char.stats,
+    char.bonusStats,
+    char.overrideStats,
+    char.modifiers,
+    3
+  );
+  const conMod = Math.floor((conScore - 10) / 2);
+  const hpPerLevelBonus = sumModifierBonuses(char.modifiers, "hit-points-per-level");
+  return base + bonus + (conMod + hpPerLevelBonus) * level;
 }
 
 export function calculateCurrentHp(char: DdbCharacter): number {

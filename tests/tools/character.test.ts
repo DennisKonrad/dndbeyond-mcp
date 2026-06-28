@@ -227,7 +227,7 @@ describe("getCharacter", () => {
     expect(text).toContain("Race: Mountain Dwarf");
     expect(text).toContain("Class: Fighter (Battle Master) 5");
     expect(text).toContain("Level: 5");
-    expect(text).toContain("HP: 32/42 (+5 temp)");
+    expect(text).toContain("HP: 42/52 (+5 temp)");
     expect(text).toContain("Campaign: Lost Mines of Phandelver");
     expect(text).toContain("Equipped Items:");
     expect(text).toContain("Longsword");
