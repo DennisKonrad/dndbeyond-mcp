@@ -181,5 +181,6 @@ export async function getPartyStatus(
   }
 
   lines.push("", `Party HP: ${curSum}/${maxSum}`);
+  lines.push("— alle Werte frisch von DDB gelesen (Cache pro Mitglied umgangen)");
   return { content: [{ type: "text" as const, text: lines.join("\n") }] };
 }

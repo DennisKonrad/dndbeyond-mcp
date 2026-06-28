@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { getCharacter, listCharacters } from "../../src/tools/character.js";
+import { getCharacter, listCharacters, fingerprintCharacter } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -54,10 +54,20 @@ function createDetailedMockCharacter(): DdbCharacter {
 }
 
 function createMockClient(): DdbClient {
-  return {
+  const client = {
     get: vi.fn(),
     getRaw: vi.fn(),
-  } as unknown as DdbClient;
+  } as Record<string, unknown>;
+  // getWithMeta delegates to get so existing get mocks keep working; it just
+  // wraps the value with freshness metadata (always "live" in tests).
+  client.getWithMeta = vi.fn((url: string, key: string, ttl?: number) =>
+    (client.get as ReturnType<typeof vi.fn>)(url, key, ttl).then((value: unknown) => ({
+      value,
+      fromCache: false,
+      ageMs: 0,
+    }))
+  );
+  return client as unknown as DdbClient;
 }
 
 const mockCharacter: DdbCharacter = {
@@ -492,5 +502,23 @@ describe("listCharacters", () => {
 
     expect(result.content).toHaveLength(1);
     expect(result.content[0].text).toBe("No characters found.");
+  });
+});
+
+describe("fingerprintCharacter", () => {
+  it("is stable for identical combat state", () => {
+    expect(fingerprintCharacter(mockCharacter)).toBe(fingerprintCharacter(mockCharacter));
+  });
+
+  it("changes when HP (removedHitPoints) changes", () => {
+    const damaged = { ...mockCharacter, removedHitPoints: mockCharacter.removedHitPoints + 1 };
+    expect(fingerprintCharacter(damaged)).not.toBe(fingerprintCharacter(mockCharacter));
+  });
+
+  it("does NOT change when only dateModified changes", () => {
+    // Regression guard: DDB advances dateModified on sheet touches without HP
+    // changing; the fingerprint must not treat that as a combat-state change.
+    const reEdited = { ...mockCharacter, dateModified: "2099-01-01T00:00:00Z" };
+    expect(fingerprintCharacter(reEdited)).toBe(fingerprintCharacter(mockCharacter));
   });
 });

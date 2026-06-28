@@ -15,10 +15,18 @@ const mockUserCharacters = {
 };
 
 function createMockClient(): DdbClient {
-  return {
+  const client = {
     get: vi.fn(),
     getRaw: vi.fn(),
-  } as unknown as DdbClient;
+  } as Record<string, unknown>;
+  client.getWithMeta = vi.fn((url: string, key: string, ttl?: number) =>
+    (client.get as ReturnType<typeof vi.fn>)(url, key, ttl).then((value: unknown) => ({
+      value,
+      fromCache: false,
+      ageMs: 0,
+    }))
+  );
+  return client as unknown as DdbClient;
 }
 
 function createCharacterWithProficiencies(): DdbCharacter {

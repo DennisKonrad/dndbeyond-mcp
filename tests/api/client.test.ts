@@ -185,6 +185,21 @@ describe("DdbClient", () => {
       ).rejects.toThrow("D&D Beyond API error: 404 Not Found");
     });
 
+    it("shouldIncludeResponseBodyInErrorMessage", async () => {
+      // D&D Beyond returns a validation message in the body on 4xx; surface it
+      // so a bare "400 Bad Request" becomes debuggable.
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+        text: () => Promise.resolve('{"message":"removedHitPoints out of range"}'),
+      });
+
+      await expect(
+        client.get("https://character-service.dndbeyond.com/character/v5/character/1", "character:1")
+      ).rejects.toThrow("removedHitPoints out of range");
+    });
+
     it("shouldSetAuthExpiredFlagWhen401Response", async () => {
       mockFetch.mockResolvedValue({
         ok: false,

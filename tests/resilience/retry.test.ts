@@ -52,6 +52,13 @@ describe("withRetry", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
+  it("should not retry on non-retryable HttpError (400)", async () => {
+    // A 400 is a deterministic client error; retrying only adds latency.
+    const fn = vi.fn().mockRejectedValue(new HttpError("Bad Request", 400));
+    await expect(withRetry(fn)).rejects.toThrow("Bad Request");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it("should throw after max retries exhausted", async () => {
     const fn = vi.fn().mockRejectedValue(new Error("persistent failure"));
 

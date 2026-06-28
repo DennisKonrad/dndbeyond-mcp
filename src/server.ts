@@ -122,12 +122,17 @@ export async function startServer(): Promise<void> {
         .enum(["summary", "sheet", "full"])
         .optional()
         .describe("Detail level: 'summary', 'sheet' (default), or 'full'"),
+      forceRefresh: z
+        .boolean()
+        .optional()
+        .describe("Bypass the 60s cache and fetch live from D&D Beyond. Use when current HP/state must be up to date (e.g. mid-combat)."),
     },
     async (params) =>
       getCharacter(client, {
         characterId: params.characterId,
         characterName: params.characterName,
         detail: params.detail,
+        forceRefresh: params.forceRefresh,
       })
   );
 

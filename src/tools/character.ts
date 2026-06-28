@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DdbClient } from "../api/client.js";
 import { ENDPOINTS } from "../api/endpoints.js";
 import { getUserId } from "../api/auth.js";
@@ -20,6 +21,44 @@ interface GetCharacterParams {
   characterId?: number;
   characterName?: string;
   detail?: "summary" | "sheet" | "full";
+  forceRefresh?: boolean;
+}
+
+/**
+ * Reliable "did the combat state change" token over the volatile fields —
+ * including removedHitPoints, so it flips on gameplay HP changes. Deliberately
+ * EXCLUDES dateModified: DDB advances that stamp on its own (sheet touches)
+ * without HP changing (verified 2026-06-28), which would make the fingerprint
+ * a false positive for HP. dateModified does NOT track combat-tracker HP, so
+ * this fingerprint — not dateModified — is the trustworthy HP change check.
+ */
+export function fingerprintCharacter(char: DdbCharacter): string {
+  const sig = JSON.stringify({
+    rm: char.removedHitPoints,
+    tmp: char.temporaryHitPoints,
+    ovr: char.overrideHitPoints,
+    base: char.baseHitPoints,
+    bonus: char.bonusHitPoints,
+    death: char.deathSaves,
+    slots: char.spellSlots,
+    pact: char.pactMagic,
+  });
+  return createHash("sha256").update(sig).digest("hex").slice(0, 10);
+}
+
+/**
+ * One-line freshness footer. `fp` is the reliable change token (same fp across
+ * two reads = unchanged, incl. HP). `dateModified` is only the last sheet edit
+ * (does NOT capture combat HP). fromCache/age tells you whether the shown copy
+ * might already be behind DDB — forceRefresh to guarantee current.
+ */
+function formatFreshness(char: DdbCharacter, fromCache: boolean, ageMs: number): string {
+  const dm = char.dateModified;
+  const edited = dm ? `${dm.slice(0, 19).replace("T", " ")}Z` : "?";
+  const source = fromCache
+    ? `Cache, ${Math.round(ageMs / 1000)}s alt · forceRefresh=true für frisch`
+    : "live (gerade geladen)";
+  return `\n— Stand: fp:${fingerprintCharacter(char)} · ${source} · letzter Sheet-Edit ${edited}`;
 }
 
 interface GetDefinitionParams {
@@ -1097,10 +1136,11 @@ export async function getCharacter(
     return { content: [{ type: "text", text: idOrError }] };
   }
 
-  const character = await client.get<DdbCharacter>(
+  const { value: character, fromCache, ageMs } = await client.getWithMeta<DdbCharacter>(
     ENDPOINTS.character.get(idOrError),
     `character:${idOrError}`,
-    60_000
+    60_000,
+    params.forceRefresh ?? false
   );
 
   const detail = params.detail ?? "sheet";
@@ -1118,7 +1158,7 @@ export async function getCharacter(
       break;
   }
 
-  return { content: [{ type: "text", text }] };
+  return { content: [{ type: "text", text: text + formatFreshness(character, fromCache, ageMs) }] };
 }
 
 // ============================================================================
@@ -1332,6 +1372,10 @@ export async function updateHp(
   client: DdbClient,
   params: UpdateHpParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  // HP is a delta-write: removedHitPoints is computed from the character's
+  // CURRENT value, so a stale cached read would set the wrong absolute HP
+  // (e.g. if the player changed HP in the DDB app meanwhile). Read fresh.
+  client.invalidateCache(`character:${params.characterId}`);
   const character = await client.get<DdbCharacter>(
     ENDPOINTS.character.get(params.characterId),
     `character:${params.characterId}`,

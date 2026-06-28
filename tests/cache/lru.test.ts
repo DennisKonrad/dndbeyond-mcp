@@ -64,4 +64,34 @@ describe("TtlCache", () => {
     expect(cache.get("short")).toBeUndefined();
     expect(cache.get("long")).toBe("value");
   });
+
+  describe("ageOf", () => {
+    it("should return undefined for missing keys", () => {
+      const cache = new TtlCache<string>(60_000);
+      expect(cache.ageOf("missing")).toBeUndefined();
+    });
+
+    it("should report elapsed time since the entry was stored", () => {
+      const cache = new TtlCache<string>(60_000);
+      cache.set("key", "value");
+      expect(cache.ageOf("key")).toBe(0);
+      vi.advanceTimersByTime(3_000);
+      expect(cache.ageOf("key")).toBe(3_000);
+    });
+
+    it("should return undefined once the entry has expired", () => {
+      const cache = new TtlCache<string>(1_000);
+      cache.set("key", "value");
+      vi.advanceTimersByTime(1_001);
+      expect(cache.ageOf("key")).toBeUndefined();
+    });
+
+    it("should reset age when an entry is overwritten", () => {
+      const cache = new TtlCache<string>(60_000);
+      cache.set("key", "value");
+      vi.advanceTimersByTime(3_000);
+      cache.set("key", "value2");
+      expect(cache.ageOf("key")).toBe(0);
+    });
+  });
 });

@@ -29,6 +29,29 @@ export class DdbClient {
   }
 
   /**
+   * Like get(), but also reports whether the value came from cache and how old
+   * it is — so callers can show a freshness indicator. Pass forceRefresh to
+   * bypass the cache and fetch live.
+   */
+  async getWithMeta<T>(
+    url: string,
+    cacheKey: string,
+    ttl?: number,
+    forceRefresh = false,
+  ): Promise<{ value: T; fromCache: boolean; ageMs: number }> {
+    if (forceRefresh) this.cache.invalidate(cacheKey);
+
+    const ageMs = this.cache.ageOf(cacheKey);
+    if (ageMs !== undefined) {
+      return { value: this.cache.get(cacheKey) as T, fromCache: true, ageMs };
+    }
+
+    const result = await this.request<T>(url, { method: "GET" });
+    this.cache.set(cacheKey, result, ttl);
+    return { value: result, fromCache: false, ageMs: 0 };
+  }
+
+  /**
    * GET that returns the raw JSON without envelope unwrapping.
    * Used for monster-service which has its own response format.
    */
@@ -80,6 +103,22 @@ export class DdbClient {
     return result;
   }
 
+  /**
+   * Build an HttpError for a failed response, including the response body when
+   * present. D&D Beyond returns a validation message in the body on 4xx (e.g.
+   * why a write was rejected); without it a bare "400 Bad Request" is undebuggable.
+   */
+  private async toHttpError(response: Response): Promise<HttpError> {
+    if (response.status === 401) this.authExpired = true;
+    const body =
+      typeof response.text === "function" ? await response.text().catch(() => "") : "";
+    const detail = body ? ` — ${body.slice(0, 500)}` : "";
+    return new HttpError(
+      `D&D Beyond API error: ${response.status} ${response.statusText}${detail}`,
+      response.status,
+    );
+  }
+
   private async requestRaw<T>(url: string, options: RequestInit): Promise<T> {
     await this.rateLimiter.acquire();
 
@@ -89,13 +128,7 @@ export class DdbClient {
         const response = await fetch(url, { ...options, headers });
 
         if (!response.ok) {
-          if (response.status === 401) {
-            this.authExpired = true;
-          }
-          throw new HttpError(
-            `D&D Beyond API error: ${response.status} ${response.statusText}`,
-            response.status,
-          );
+          throw await this.toHttpError(response);
         }
 
         return (await response.json()) as T;
@@ -112,13 +145,7 @@ export class DdbClient {
         const response = await fetch(url, { ...options, headers });
 
         if (!response.ok) {
-          if (response.status === 401) {
-            this.authExpired = true;
-          }
-          throw new HttpError(
-            `D&D Beyond API error: ${response.status} ${response.statusText}`,
-            response.status,
-          );
+          throw await this.toHttpError(response);
         }
 
         const json = await response.json();

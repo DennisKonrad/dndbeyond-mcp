@@ -28,6 +28,7 @@ export interface DdbCharacter {
   campaign: { id: number; name: string } | null;
   feats: DdbFeat[];
   notes: DdbNotes;
+  dateModified?: string;
   level?: number;
   pactMagic?: {
     level: number;

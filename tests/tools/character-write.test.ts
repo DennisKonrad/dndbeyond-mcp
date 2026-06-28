@@ -94,6 +94,7 @@ describe("updateHp", () => {
       get: vi.fn().mockResolvedValue(mockCharacter),
       getRaw: vi.fn(),
       put: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
     } as unknown as DdbClient;
   });
 
@@ -109,6 +110,11 @@ describe("updateHp", () => {
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Healed Test Character for 10 HP");
+  });
+
+  it("invalidates the cache before reading so the delta is off the live HP", async () => {
+    await updateHp(mockClient, { characterId: 123, hpChange: -5 });
+    expect(mockClient.invalidateCache).toHaveBeenCalledWith("character:123");
   });
 
   it("should damage character when hpChange is negative", async () => {
@@ -387,6 +393,7 @@ describe("updateHp with temporary HP", () => {
       get: vi.fn().mockResolvedValue(mockCharacter),
       getRaw: vi.fn(),
       put: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
     } as unknown as DdbClient;
   });
 

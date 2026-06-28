@@ -1,6 +1,7 @@
 interface CacheEntry<T> {
   value: T;
   expiresAt: number;
+  storedAt: number;
 }
 
 export class TtlCache<T> {
@@ -31,7 +32,22 @@ export class TtlCache<T> {
     this.entries.set(key, {
       value,
       expiresAt: Date.now() + (ttlMs ?? this.defaultTtl),
+      storedAt: Date.now(),
     });
+  }
+
+  /**
+   * Age in ms of a live entry, or undefined if absent/expired. Lets callers
+   * surface how stale a cached value is (freshness check) without consuming it.
+   */
+  ageOf(key: string): number | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (Date.now() >= entry.expiresAt) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return Date.now() - entry.storedAt;
   }
 
   invalidate(key: string): void {
