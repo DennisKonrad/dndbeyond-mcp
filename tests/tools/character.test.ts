@@ -316,6 +316,47 @@ describe("getCharacter - fuzzy name matching", () => {
   });
 });
 
+describe("getCharacter - campaign roster name fallback", () => {
+  it("should resolve a party member by name via the campaign roster", async () => {
+    const client = createMockClient();
+    vi.mocked(client.get)
+      .mockResolvedValueOnce(mockUserCharacters) // own characters — no "Varis"
+      .mockResolvedValueOnce([                    // active campaigns
+        { id: 101, name: "DND Arbeit", dmId: 1, dmUsername: "dm", playerCount: 3, dateCreated: "1/1/2026" },
+      ])
+      .mockResolvedValueOnce([                    // campaign 101 roster
+        { id: 999, name: "Varis Greenwood", userId: 20, userName: "player2", avatarUrl: "", characterStatus: 1, isAssigned: true },
+      ])
+      .mockResolvedValueOnce(mockCharacter);      // character data for resolved id
+
+    const result = await getCharacter(client, { characterName: "Varis Greenwood", detail: "summary" });
+
+    // Resolution succeeded (not the not-found path) and fetched the roster-resolved id.
+    expect(result.content[0].text).not.toContain("not found");
+    const characterFetchCall = vi.mocked(client.get).mock.calls.find((c) =>
+      String(c[0]).includes("/999")
+    );
+    expect(characterFetchCall).toBeDefined();
+  });
+
+  it("should not match own-character ids twice via the roster fallback", async () => {
+    const client = createMockClient();
+    // "Aragorn" matches nothing in own list or roster → not found, exercising the dedupe path.
+    vi.mocked(client.get)
+      .mockResolvedValueOnce(mockUserCharacters)
+      .mockResolvedValueOnce([
+        { id: 101, name: "DND Arbeit", dmId: 1, dmUsername: "dm", playerCount: 3, dateCreated: "1/1/2026" },
+      ])
+      .mockResolvedValueOnce([
+        { id: 12345, name: "Thorin Ironforge", userId: 1, userName: "self", avatarUrl: "", characterStatus: 1, isAssigned: true },
+      ]);
+
+    const result = await getCharacter(client, { characterName: "Aragorn" });
+
+    expect(result.content[0].text).toBe('Character "Aragorn" not found.');
+  });
+});
+
 describe("getCharacter with detail levels", () => {
   it("should return summary by detail='summary'", async () => {
     const client = createMockClient();

@@ -1001,28 +1001,27 @@ async function fetchUserCharacters(client: DdbClient): Promise<UserCharacterList
   return data?.characters ?? [];
 }
 
-async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
-  const allCharacters = (await fetchUserCharacters(client)).map((c) => ({
-    id: c.id,
-    name: c.name.trim(),
-  }));
+type NamedCharacter = { id: number; name: string };
 
+// Exact (case-insensitive) → unique substring → unique fuzzy (Levenshtein) match.
+// Returns null when there is no match or the match is ambiguous.
+function matchCharacterByName(candidates: NamedCharacter[], name: string): number | null {
   // 1. Exact match (case-insensitive)
-  const exactMatch = allCharacters.find(
+  const exactMatch = candidates.find(
     (char) => char.name.toLowerCase() === name.toLowerCase()
   );
   if (exactMatch) return exactMatch.id;
 
   // 2. Substring match (case-insensitive)
   const lowerName = name.toLowerCase();
-  const substringMatches = allCharacters.filter(
+  const substringMatches = candidates.filter(
     (char) => char.name.toLowerCase().includes(lowerName)
   );
   if (substringMatches.length === 1) return substringMatches[0].id;
 
   // 3. Fuzzy match via Levenshtein distance — check full names and individual words
-  const fuzzyResults: Array<{ id: number; name: string }> = [];
-  for (const char of allCharacters) {
+  const fuzzyResults: NamedCharacter[] = [];
+  for (const char of candidates) {
     const fullDistance = levenshteinDistance(lowerName, char.name.toLowerCase());
     if (fullDistance <= 3) {
       fuzzyResults.push(char);
@@ -1040,6 +1039,46 @@ async function findCharacterByName(client: DdbClient, name: string): Promise<num
   if (fuzzyResults.length === 1) return fuzzyResults[0].id;
 
   return null;
+}
+
+// Party members across the user's active campaigns (other players' shared characters).
+// Reuses the same cache keys as the campaign tools so rosters are fetched at most once.
+async function fetchCampaignRosterCharacters(client: DdbClient): Promise<NamedCharacter[]> {
+  const campaigns = await client.get<DdbCampaign[]>(
+    ENDPOINTS.campaign.list(),
+    "campaigns",
+    5 * 60 * 1000
+  );
+  const roster: NamedCharacter[] = [];
+  for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
+    const characters = await client.get<DdbCampaignCharacter2[]>(
+      ENDPOINTS.campaign.characters(campaign.id),
+      `campaign:${campaign.id}:characters`,
+      5 * 60 * 1000
+    );
+    for (const character of Array.isArray(characters) ? characters : []) {
+      roster.push({ id: character.id, name: character.name.trim() });
+    }
+  }
+  return roster;
+}
+
+async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
+  // 1. Match against the user's own characters first (cheapest, most common case).
+  const own = (await fetchUserCharacters(client)).map((c) => ({
+    id: c.id,
+    name: c.name.trim(),
+  }));
+  const ownMatch = matchCharacterByName(own, name);
+  if (ownMatch != null) return ownMatch;
+
+  // 2. Fall back to party members across active campaigns (other players' characters).
+  //    Dedupe by id so own characters already tried aren't matched twice.
+  const ownIds = new Set(own.map((c) => c.id));
+  const roster = (await fetchCampaignRosterCharacters(client)).filter(
+    (c) => !ownIds.has(c.id)
+  );
+  return matchCharacterByName(roster, name);
 }
 
 export async function getCharacter(
