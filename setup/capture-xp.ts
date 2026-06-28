@@ -1,13 +1,19 @@
 /**
- * Capture the D&D Beyond XP-save request (untracked dev tool).
+ * Capture D&D Beyond write requests via a real headed Chrome (untracked dev tool).
  *
- * Opens the character sheet in a real Chrome (saved auth), logs every WRITE
- * request to character-service. You edit the XP value in the browser and save;
- * the request (URL + method + body + response) is captured. Close the browser
- * when done — the XP-relevant writes are printed and saved to setup/captured-xp.json.
+ * Opens the character sheet (saved auth) and logs every WRITE request to
+ * character-service (url/method/body/response). Edit something in the browser;
+ * the requests are captured and written to setup/captured-xp.json.
  *
  *   npx tsx setup/capture-xp.ts            # default: Krakzinn's sheet
  *   CAPTURE_CHAR_ID=123 npx tsx setup/capture-xp.ts
+ *
+ * NixOS: provide a real Chromium via
+ *   nix-shell -p chromium --run 'DNDBEYOND_MCP_BROWSER_PATH="$(command -v chromium)" npx tsx setup/capture-xp.ts'
+ *
+ * Exit: close the browser OR press Ctrl+C — both finalize cleanly. Captured data
+ * is also flushed to disk after every request, so nothing is lost even if the
+ * process is killed.
  */
 import { chromium } from "playwright";
 import { readFile } from "node:fs/promises";
@@ -40,6 +46,29 @@ async function main() {
   const page = await context.newPage();
   const captured: Cap[] = [];
 
+  const flush = () => { try { writeFileSync(OUTPUT_PATH, JSON.stringify(captured, null, 2)); } catch { /* ignore */ } };
+
+  // Idempotent shutdown: print the write summary, persist, close, exit. Triggered
+  // by ANY of several signals — browser "disconnected" alone is unreliable under
+  // some launchers (e.g. nix-shell-wrapped Chromium), which left the old version
+  // hanging with no output.
+  let done = false;
+  const finish = (reason: string) => {
+    if (done) return;
+    done = true;
+    flush();
+    const writes = captured;
+    console.log(`\n=== ${writes.length} write request(s) erfasst -> ${OUTPUT_PATH} (${reason}) ===`);
+    for (const r of writes) {
+      console.log(`\n${r.method} ${new URL(r.url).pathname}`);
+      console.log(`  body:     ${JSON.stringify(r.body)}`);
+      console.log(`  status:   ${r.status}`);
+      console.log(`  response: ${r.response}`);
+    }
+    browser.close().catch(() => {});
+    process.exit(0);
+  };
+
   page.on("request", (req) => {
     const url = req.url();
     if (!url.includes("character-service.dndbeyond.com")) return;
@@ -47,6 +76,7 @@ async function main() {
     let body: unknown = null;
     try { body = JSON.parse(req.postData() || "null"); } catch { body = req.postData(); }
     captured.push({ timestamp: new Date().toISOString(), method: req.method(), url, body, status: null, response: null });
+    flush();
     console.log(`>> ${req.method()} ${url} body=${JSON.stringify(body)}`);
   });
   page.on("response", async (res) => {
@@ -57,21 +87,21 @@ async function main() {
     if (!e) return;
     e.status = res.status();
     try { const t = await res.text(); e.response = t.slice(0, 400); } catch { e.response = "(unreadable)"; }
+    flush();
     console.log(`<< ${res.status()} ${url}`);
   });
 
   await page.goto(SHEET_URL, { waitUntil: "domcontentloaded" });
-  console.error(`\n--- Chrome offen auf ${SHEET_URL}. Aendere die XP und speichere. Dann Browser schliessen. ---\n`);
+  console.error(`\n--- Chrome offen auf ${SHEET_URL}. Mach deine Aenderung, dann Browser schliessen ODER Ctrl+C. ---\n`);
 
-  await new Promise<void>((resolve) => browser.on("disconnected", () => resolve()));
+  // Multiple exit triggers so we never hang waiting on a single unreliable event.
+  browser.on("disconnected", () => finish("browser disconnected"));
+  context.on("close", () => finish("context closed"));
+  page.on("close", () => finish("page closed"));
+  process.on("SIGINT", () => finish("SIGINT"));
+  process.on("SIGTERM", () => finish("SIGTERM"));
 
-  writeFileSync(OUTPUT_PATH, JSON.stringify(captured, null, 2));
-  console.log(`\n=== ${captured.length} write request(s) erfasst -> ${OUTPUT_PATH} ===`);
-  for (const r of captured) {
-    console.log(`\n${r.method} ${new URL(r.url).pathname}`);
-    console.log(`  body:     ${JSON.stringify(r.body)}`);
-    console.log(`  status:   ${r.status}`);
-    console.log(`  response: ${r.response}`);
-  }
+  // Park forever; finish() (via a trigger above) is what ends the process.
+  await new Promise<void>(() => { /* until a trigger fires */ });
 }
 main().catch((e) => { console.error("Error:", e.message); process.exit(1); });
