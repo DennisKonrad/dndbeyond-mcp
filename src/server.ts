@@ -51,7 +51,7 @@ import {
   updatePartyInventoryItem,
   updateDescription,
 } from "./tools/character.js";
-import { listCampaigns, getCampaignCharacters } from "./tools/campaign.js";
+import { listCampaigns, getCampaignCharacters, getPartyStatus } from "./tools/campaign.js";
 import {
   searchSpells,
   getSpell,
@@ -828,6 +828,18 @@ export async function startServer(): Promise<void> {
     },
     async (params) =>
       getCampaignCharacters(client, {
+        campaignId: params.campaignId,
+      })
+  );
+
+  server.tool(
+    "get_party_status",
+    "Quick combat status for the whole party: current/max HP, AC, temp HP and a DOWN/bloodied marker per character, plus total party HP. Reads each sheet fresh, so use it to check the party's state mid-fight.",
+    {
+      campaignId: z.coerce.number().describe("The campaign ID (from list_campaigns)"),
+    },
+    async (params) =>
+      getPartyStatus(client, {
         campaignId: params.campaignId,
       })
   );

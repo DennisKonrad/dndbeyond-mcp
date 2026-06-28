@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { listCampaigns, getCampaignCharacters } from "../../src/tools/campaign.js";
+import { listCampaigns, getCampaignCharacters, getPartyStatus } from "../../src/tools/campaign.js";
 import { DdbClient } from "../../src/api/client.js";
 import type { DdbCampaign } from "../../src/types/api.js";
 
@@ -39,6 +39,7 @@ describe("campaign tools", () => {
     mockClient = {
       get: vi.fn(),
       getRaw: vi.fn(),
+      invalidateCache: vi.fn(),
     } as unknown as DdbClient;
     vi.clearAllMocks();
   });
@@ -213,6 +214,49 @@ describe("campaign tools", () => {
         "campaign:101:characters",
         expect.any(Number)
       );
+    });
+  });
+
+  describe("getPartyStatus", () => {
+    // Minimal character usable by calculateMaxHp/CurrentHp/Ac.
+    const mkChar = (over: Record<string, unknown>) => ({
+      stats: [{ id: 2, value: 10 }, { id: 3, value: 10 }, { id: 5, value: 10 }],
+      bonusStats: [],
+      overrideStats: [],
+      modifiers: {},
+      classes: [{ level: 3, definition: { name: "Fighter" } }],
+      inventory: [],
+      bonusHitPoints: null,
+      overrideHitPoints: null,
+      temporaryHitPoints: 0,
+      ...over,
+    });
+
+    it("shouldReportPerCharacterAndTotalHp", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce([
+          { id: 1, name: "Alpha" },
+          { id: 2, name: "Bravo" },
+        ])
+        .mockResolvedValueOnce(mkChar({ baseHitPoints: 20, removedHitPoints: 5 }))   // 15/20
+        .mockResolvedValueOnce(mkChar({ baseHitPoints: 30, removedHitPoints: 30 })); // 0/30 DOWN
+
+      const text = (await getPartyStatus(mockClient, { campaignId: 101 })).content[0].text;
+
+      expect(text).toContain("Alpha — 15/20 HP · AC 10");
+      expect(text).toContain("Bravo — 0/30 HP · AC 10");
+      expect(text).toContain("[DOWN]");
+      expect(text).toContain("Party HP: 15/50");
+    });
+
+    it("shouldReadEachSheetFresh", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce([{ id: 7, name: "Solo" }])
+        .mockResolvedValueOnce(mkChar({ baseHitPoints: 10, removedHitPoints: 0 }));
+
+      await getPartyStatus(mockClient, { campaignId: 101 });
+
+      expect(mockClient.invalidateCache).toHaveBeenCalledWith("character:7");
     });
   });
 });
