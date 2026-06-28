@@ -41,6 +41,7 @@ import {
   setAbilityScoreType,
   setStartingEquipmentType,
   addInventoryItems,
+  removeInventoryItem,
   setItemEquipped,
   setGold,
   setMaxHp,
@@ -783,6 +784,20 @@ export async function startServer(): Promise<void> {
       addInventoryItems(client, {
         characterId: params.characterId,
         equipment: params.equipment,
+      })
+  );
+
+  server.tool(
+    "remove_inventory_item",
+    "Remove an item from a character's inventory. Pass the inventory ENTRY id (the 'id' on each entry in the character's inventory array, from get_character), NOT the item definition id.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      itemId: z.coerce.number().describe("The inventory ENTRY id to remove (from get_character)"),
+    },
+    async (params) =>
+      removeInventoryItem(client, {
+        characterId: params.characterId,
+        itemId: params.itemId,
       })
   );
 

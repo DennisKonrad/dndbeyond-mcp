@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem, setXp } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem, setXp, removeInventoryItem } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -157,6 +157,38 @@ describe("setXp", () => {
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Set XP to 1545");
+  });
+});
+
+describe("removeInventoryItem", () => {
+  it("DELETEs the entry by id after validating it exists", async () => {
+    const mockClient = {
+      get: vi.fn().mockResolvedValue({ inventory: [{ id: 555, definition: { name: "Fire Opal" } }] }),
+      delete: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+
+    const result = await removeInventoryItem(mockClient, { characterId: 123, itemId: 555 });
+
+    expect(mockClient.delete).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/inventory/item"),
+      { characterId: 123, id: 555 },
+      ["character:123"]
+    );
+    expect(result.content[0].text).toContain('Removed "Fire Opal"');
+  });
+
+  it("does not DELETE when the entry id is absent", async () => {
+    const mockClient = {
+      get: vi.fn().mockResolvedValue({ inventory: [{ id: 999, definition: { name: "Other" } }] }),
+      delete: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+
+    const result = await removeInventoryItem(mockClient, { characterId: 123, itemId: 555 });
+
+    expect(mockClient.delete).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("No inventory item with entry id 555");
   });
 });
 

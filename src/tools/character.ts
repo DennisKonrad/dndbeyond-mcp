@@ -2304,6 +2304,39 @@ export async function addInventoryItems(
   return { content: [{ type: "text", text: `Added ${params.equipment.length} item(s) to character ${params.characterId}.` }] };
 }
 
+interface RemoveInventoryItemParams {
+  characterId: number;
+  itemId: number;
+}
+
+/**
+ * Remove an item from a character's inventory by its inventory ENTRY id (the
+ * `id` on each entry in the inventory array, from get_character — NOT the item
+ * definition id). Reads fresh first to validate the entry and name the result.
+ */
+export async function removeInventoryItem(
+  client: DdbClient,
+  params: RemoveInventoryItemParams
+): Promise<ToolResult> {
+  client.invalidateCache(`character:${params.characterId}`);
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    `character:${params.characterId}`,
+    60_000
+  );
+  const entry = (character.inventory ?? []).find((i) => i.id === params.itemId);
+  if (!entry) {
+    return { content: [{ type: "text", text: `No inventory item with entry id ${params.itemId} on character ${params.characterId}.` }] };
+  }
+
+  await client.delete(
+    ENDPOINTS.character.inventory.removeItem(),
+    { characterId: params.characterId, id: params.itemId },
+    [`character:${params.characterId}`]
+  );
+  return { content: [{ type: "text", text: `Removed "${entry.definition?.name ?? "item"}" (entry ${params.itemId}) from character ${params.characterId}.` }] };
+}
+
 interface SetGoldParams {
   characterId: number;
   amount: number;

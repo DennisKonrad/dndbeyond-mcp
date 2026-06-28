@@ -50,6 +50,9 @@ export const ENDPOINTS = {
     customProficiency: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/proficiency`,
     inventory: {
       addItems: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item`,
+      // Remove an inventory item. DELETE with body { characterId, id: <entryId> }.
+      // Same URL as addItems; verified live against DDB.
+      removeItem: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item`,
       setGold: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency/gold`,
       // Working bulk-currency endpoint (replaces the deprecated per-id path above)
       currency: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency`,
