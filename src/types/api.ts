@@ -49,9 +49,10 @@ export interface DdbCampaignCharacter2 {
 
 // Shared party inventory (campaign-wide). Returned by the party-inventory endpoint.
 export interface DdbPartyInventoryItem {
-  id: number;
+  id: number; // party-inventory entry id (the DELETE "mappingId")
   quantity: number;
   definition: {
+    id?: number; // custom-item definition id (the DELETE "id")
     name: string;
     filterType?: string;
     type?: string;

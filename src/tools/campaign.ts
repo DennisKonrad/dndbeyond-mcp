@@ -123,7 +123,7 @@ async function formatPartyInventory(client: DdbClient, campaignId: number): Prom
 
   const itemLines = items.map((item) => {
     const qty = item.quantity > 1 ? ` (x${item.quantity})` : "";
-    return `  - ${item.definition.name}${qty}`;
+    return `  - ${item.definition.name}${qty} [ID: ${item.id}]`;
   });
   return `\nParty Inventory (${items.length} items):\n${itemLines.join("\n")}`;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -484,5 +484,55 @@ describe("addPartyInventoryItem", () => {
       expect.objectContaining({ quantity: 1, weight: null, cost: null, description: "", notes: "" }),
       ["campaign:101:party-inventory"]
     );
+  });
+});
+
+describe("removePartyInventoryItem", () => {
+  let mockClient: DdbClient;
+
+  beforeEach(() => {
+    mockClient = {
+      get: vi.fn().mockResolvedValue({
+        partyItems: [
+          { id: 1045140860, quantity: 1, definition: { id: 35675440, name: "Bierfass" } },
+          { id: 1045134207, quantity: 1, definition: { id: 391, name: "Map" } },
+        ],
+      }),
+      delete: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+  });
+
+  it("should DELETE using the entry id as mappingId and definition id as id", async () => {
+    const result = await removePartyInventoryItem(mockClient, {
+      campaignId: 7869524,
+      characterId: 167132826,
+      itemId: 1045140860,
+    });
+
+    // Mutable shared state is re-read fresh before deciding what to delete.
+    expect(mockClient.invalidateCache).toHaveBeenCalledWith("campaign:7869524:party-inventory");
+    expect(mockClient.delete).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5.1/custom/item"),
+      {
+        characterId: 167132826,
+        id: 35675440,
+        mappingId: 1045140860,
+        partyId: 7869524,
+      },
+      ["campaign:7869524:party-inventory"]
+    );
+    expect(result.content[0].text).toContain('Removed "Bierfass"');
+  });
+
+  it("should not call delete when the item id is not in the party inventory", async () => {
+    const result = await removePartyInventoryItem(mockClient, {
+      campaignId: 7869524,
+      characterId: 167132826,
+      itemId: 999999,
+    });
+
+    expect(mockClient.delete).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("No party-inventory item with id 999999");
   });
 });

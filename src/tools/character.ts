@@ -12,7 +12,7 @@ import type {
   DdbRacialTrait,
   DdbInventoryItem,
 } from "../types/character.js";
-import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
+import type { DdbCampaign, DdbCampaignCharacter2, DdbPartyInventory } from "../types/api.js";
 import { fuzzyMatch, levenshteinDistance } from "../utils/fuzzy-match.js";
 import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
 
@@ -2430,6 +2430,54 @@ export async function addPartyInventoryItem(
         text: `Added "${params.name}" (x${quantity}) to the party inventory of campaign ${params.campaignId}.`,
       },
     ],
+  };
+}
+
+interface RemovePartyInventoryItemParams {
+  campaignId: number;
+  characterId: number;
+  itemId: number; // party-inventory entry id (partyItems[].id, shown by get_campaign_characters)
+}
+
+export async function removePartyInventoryItem(
+  client: DdbClient,
+  params: RemovePartyInventoryItemParams
+): Promise<ToolResult> {
+  const cacheKey = `campaign:${params.campaignId}:party-inventory`;
+  // Re-read fresh: the entry's definition id is required for the delete, and the
+  // shared inventory may have changed since it was last cached.
+  client.invalidateCache(cacheKey);
+  const inventory = await client.get<DdbPartyInventory>(
+    ENDPOINTS.campaign.partyInventory(params.campaignId),
+    cacheKey,
+    5 * 60 * 1000
+  );
+
+  const entry = (inventory?.partyItems ?? []).find((i) => i.id === params.itemId);
+  if (!entry) {
+    return {
+      content: [{ type: "text", text: `No party-inventory item with id ${params.itemId} in campaign ${params.campaignId}.` }],
+    };
+  }
+  const definitionId = entry.definition?.id;
+  if (definitionId == null) {
+    return {
+      content: [{ type: "text", text: `Item "${entry.definition.name}" (${params.itemId}) has no custom-item definition id and cannot be removed this way.` }],
+    };
+  }
+
+  await client.delete(
+    ENDPOINTS.character.inventory.partyCustomItem(),
+    {
+      characterId: params.characterId,
+      id: definitionId,
+      mappingId: params.itemId,
+      partyId: params.campaignId,
+    },
+    [cacheKey]
+  );
+  return {
+    content: [{ type: "text", text: `Removed "${entry.definition.name}" from the party inventory of campaign ${params.campaignId}.` }],
   };
 }
 

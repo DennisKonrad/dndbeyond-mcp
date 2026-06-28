@@ -47,6 +47,7 @@ import {
   addCustomProficiency,
   addCustomItem,
   addPartyInventoryItem,
+  removePartyInventoryItem,
   updateDescription,
 } from "./tools/character.js";
 import { listCampaigns, getCampaignCharacters } from "./tools/campaign.js";
@@ -366,6 +367,22 @@ export async function startServer(): Promise<void> {
         quantity: params.quantity,
         weight: params.weight,
         cost: params.cost,
+      })
+  );
+
+  server.tool(
+    "remove_party_inventory_item",
+    "Remove a custom item from a campaign's shared party inventory. itemId is the party-inventory entry id shown as [ID: ...] by get_campaign_characters. characterId must be a member of the campaign.",
+    {
+      campaignId: z.coerce.number().describe("The campaign ID"),
+      characterId: z.coerce.number().describe("ID of one of your characters in that campaign (the acting member)"),
+      itemId: z.coerce.number().describe("The party-inventory entry id ([ID: ...] from get_campaign_characters)"),
+    },
+    async (params) =>
+      removePartyInventoryItem(client, {
+        campaignId: params.campaignId,
+        characterId: params.characterId,
+        itemId: params.itemId,
       })
   );
 
