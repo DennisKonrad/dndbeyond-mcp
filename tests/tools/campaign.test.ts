@@ -53,9 +53,11 @@ describe("campaign tools", () => {
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain("Active Campaigns:");
       expect(result.content[0].text).toContain("Lost Mines of Phandelver");
+      expect(result.content[0].text).toContain("[ID: 101]");
       expect(result.content[0].text).toContain("DM: DungeonMaster");
       expect(result.content[0].text).toContain("3 players");
       expect(result.content[0].text).toContain("Curse of Strahd");
+      expect(result.content[0].text).toContain("[ID: 102]");
       expect(result.content[0].text).toContain("DM: DarkDM");
       expect(result.content[0].text).toContain("1 player");
     });
@@ -108,9 +110,9 @@ describe("campaign tools", () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain('Party Roster for "Lost Mines of Phandelver"');
-      expect(result.content[0].text).toContain("Thorin Stonehammer (player1)");
-      expect(result.content[0].text).toContain("Elara Moonwhisper (player2)");
-      expect(result.content[0].text).toContain("Grimjaw (player3)");
+      expect(result.content[0].text).toContain("Thorin Stonehammer [ID: 1001] (player1)");
+      expect(result.content[0].text).toContain("Elara Moonwhisper [ID: 1002] (player2)");
+      expect(result.content[0].text).toContain("Grimjaw [ID: 1003] (player3)");
     });
 
     it("shouldHandleCampaignNotFound", async () => {

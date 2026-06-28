@@ -30,7 +30,7 @@ export async function listCampaigns(client: DdbClient, includeAll?: boolean) {
   for (const campaign of campaigns) {
     const playerCount = campaign.playerCount;
     lines.push(
-      `• ${campaign.name} (DM: ${campaign.dmUsername}, ${playerCount} player${playerCount !== 1 ? "s" : ""})`
+      `• ${campaign.name} [ID: ${campaign.id}] (DM: ${campaign.dmUsername}, ${playerCount} player${playerCount !== 1 ? "s" : ""})`
     );
   }
 
@@ -89,7 +89,7 @@ export async function getCampaignCharacters(
 
   const lines = [`Party Roster for "${campaign.name}":`, ""];
   for (const character of characters) {
-    lines.push(`• ${character.name} (${character.userName})`);
+    lines.push(`• ${character.name} [ID: ${character.id}] (${character.userName})`);
   }
 
   return {
