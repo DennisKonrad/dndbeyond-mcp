@@ -44,6 +44,7 @@ import {
   setItemEquipped,
   setGold,
   setMaxHp,
+  setXp,
   addCustomProficiency,
   addCustomItem,
   addPartyInventoryItem,
@@ -311,6 +312,20 @@ export async function startServer(): Promise<void> {
       setMaxHp(client, {
         characterId: params.characterId,
         maxHp: params.maxHp,
+      })
+  );
+
+  server.tool(
+    "set_xp",
+    "Set a character's experience points to an absolute value. Note: XP only drives leveling when the character's progression type is XP (not Milestone).",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      xp: z.coerce.number().describe("The experience-point total to set"),
+    },
+    async (params) =>
+      setXp(client, {
+        characterId: params.characterId,
+        xp: params.xp,
       })
   );
 

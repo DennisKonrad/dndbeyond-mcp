@@ -2343,6 +2343,28 @@ export async function setMaxHp(
   return { content: [{ type: "text", text: `Set max HP override to ${params.maxHp} on character ${params.characterId}.` }] };
 }
 
+interface SetXpParams {
+  characterId: number;
+  xp: number;
+}
+
+/**
+ * Set a character's experience points to an absolute value. Note: XP only drives
+ * leveling when the character's progression type is "XP" (preferences.progressionType
+ * = 2); on Milestone (1) the value is stored but ignored for leveling.
+ */
+export async function setXp(
+  client: DdbClient,
+  params: SetXpParams
+): Promise<ToolResult> {
+  await client.put(
+    ENDPOINTS.character.setXp(),
+    { characterId: params.characterId, currentXp: params.xp },
+    [`character:${params.characterId}`]
+  );
+  return { content: [{ type: "text", text: `Set XP to ${params.xp} on character ${params.characterId}.` }] };
+}
+
 interface SetItemEquippedParams {
   characterId: number;
   inventoryItemId: number;

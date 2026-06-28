@@ -44,6 +44,9 @@ export const ENDPOINTS = {
     updateAppearance: (field: string) => `${DDB_CHARACTER_SERVICE}/character/v5/description/${field}`,
     // Current (non-deprecated) write endpoints with characterId in the body
     setMaxHp: () => `${DDB_CHARACTER_SERVICE}/character/v5/life/hp/override`,
+    // Sets experience points. Body: { characterId, currentXp }. Captured from the
+    // DDB web app — the XP editor PUTs to /character/progression, not /xp.
+    setXp: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/progression`,
     customProficiency: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/proficiency`,
     inventory: {
       addItems: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item`,

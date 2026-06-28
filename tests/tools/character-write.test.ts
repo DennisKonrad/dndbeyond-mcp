@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem, setXp } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -142,6 +142,21 @@ describe("updateHp", () => {
       { characterId: 123, removedHitPoints: 55, temporaryHitPoints: 0 },
       expect.anything()
     );
+  });
+});
+
+describe("setXp", () => {
+  it("PUTs currentXp to the progression endpoint and invalidates cache", async () => {
+    const mockClient = { put: vi.fn().mockResolvedValue({}) } as unknown as DdbClient;
+
+    const result = await setXp(mockClient, { characterId: 123, xp: 1545 });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/character/progression"),
+      { characterId: 123, currentXp: 1545 },
+      ["character:123"]
+    );
+    expect(result.content[0].text).toContain("Set XP to 1545");
   });
 });
 
