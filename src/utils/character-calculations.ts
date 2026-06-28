@@ -42,6 +42,40 @@ export function sumModifierBonuses(
   return total;
 }
 
+// True if any modifier group carries an ability *-score bonus.
+function groupHasAbilityScoreBonus(list: DdbModifier[] | undefined): boolean {
+  return (
+    Array.isArray(list) &&
+    list.some((m) => m.type === "bonus" && /-score$/.test(m.subType ?? "") && m.value != null)
+  );
+}
+
+// Sums ability *-score bonuses, replicating D&D Beyond's observed behavior:
+// under the 2024 rules ability boosts come from the background/feat, and a
+// character that has any feat/background ability-score bonus has its legacy
+// SPECIES (race-group) ability boosts suppressed entirely. Characters with only
+// racial boosts (no feat/background ASI) keep them.
+// (Empirically verified against live sheets: Varis/Kaplan drop race, Krakzinn keeps it.)
+function sumAbilityScoreBonus(
+  modifiers: Record<string, DdbModifier[]>,
+  subType: string
+): number {
+  const suppressRace =
+    groupHasAbilityScoreBonus(modifiers.feat) || groupHasAbilityScoreBonus(modifiers.background);
+
+  let total = 0;
+  for (const [group, list] of Object.entries(modifiers)) {
+    if (!Array.isArray(list)) continue;
+    if (suppressRace && group === "race") continue;
+    for (const mod of list) {
+      if (mod.type === "bonus" && mod.subType === subType && mod.value != null) {
+        total += mod.value;
+      }
+    }
+  }
+  return total;
+}
+
 export function computeFinalAbilityScore(
   base: DdbAbilityScore[],
   bonus: DdbAbilityScore[],
@@ -54,7 +88,7 @@ export function computeFinalAbilityScore(
 
   const baseValue = base.find((s) => s.id === id)?.value ?? 10;
   const bonusValue = bonus.find((s) => s.id === id)?.value ?? 0;
-  const modifierBonus = sumModifierBonuses(modifiers, ABILITY_SUBTYPE_MAP[id] ?? "");
+  const modifierBonus = sumAbilityScoreBonus(modifiers, ABILITY_SUBTYPE_MAP[id] ?? "");
   return baseValue + bonusValue + modifierBonus;
 }
 

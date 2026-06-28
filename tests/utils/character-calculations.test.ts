@@ -63,6 +63,38 @@ describe("computeFinalAbilityScore", () => {
     const result = computeFinalAbilityScore(baseStats, bonusStats, overrideStats, modifiers, 1);
     expect(result).toBe(15); // Just base
   });
+
+  // D&D Beyond 2024 behavior: a feat/background ability boost suppresses the
+  // legacy SPECIES (race-group) ability boost entirely. Verified against live
+  // sheets (Varis, Kaplan, Lyandria drop race; Krakzinn keeps it).
+  it("should suppress race-group ability bonus when a feat ability bonus exists", () => {
+    const modifiers = {
+      race: [{ type: "bonus", subType: "constitution-score", value: 2 } as DdbModifier],
+      feat: [{ type: "bonus", subType: "constitution-score", value: 2 } as DdbModifier],
+      class: [], background: [], item: [], condition: [],
+    };
+    // base CON 13; race +2 suppressed, only feat +2 applies
+    expect(computeFinalAbilityScore(baseStats, [], [], modifiers, 3)).toBe(15);
+  });
+
+  it("should also suppress race-group ability bonus when a background ability bonus exists", () => {
+    const modifiers = {
+      race: [{ type: "bonus", subType: "strength-score", value: 2 } as DdbModifier],
+      background: [{ type: "bonus", subType: "strength-score", value: 1 } as DdbModifier],
+      class: [], item: [], feat: [], condition: [],
+    };
+    // base STR 15; race +2 suppressed, only background +1 applies
+    expect(computeFinalAbilityScore(baseStats, [], [], modifiers, 1)).toBe(16);
+  });
+
+  it("should keep race-group ability bonus when there is no feat/background ability bonus", () => {
+    const modifiers = {
+      race: [{ type: "bonus", subType: "strength-score", value: 2 } as DdbModifier],
+      class: [], background: [], item: [], feat: [], condition: [],
+    };
+    // base STR 15 + race +2 = 17 (race applies)
+    expect(computeFinalAbilityScore(baseStats, [], [], modifiers, 1)).toBe(17);
+  });
 });
 
 describe("sumModifierBonuses", () => {
