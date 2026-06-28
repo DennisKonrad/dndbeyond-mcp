@@ -138,15 +138,22 @@ function formatSpells(char: DdbCharacter): string {
 }
 
 function formatInventory(char: DdbCharacter): string {
-  const equipped = char.inventory.filter((item) => item.equipped);
-  if (equipped.length === 0) return StringUtils.EMPTY;
+  const inventory = char.inventory ?? [];
+  if (inventory.length === 0) return StringUtils.EMPTY;
 
-  const items = equipped.map((item) => {
+  // Equipped items first (each marked), then the rest, preserving original order within each group.
+  const ordered = [
+    ...inventory.filter((item) => item.equipped),
+    ...inventory.filter((item) => !item.equipped),
+  ];
+
+  const items = ordered.map((item) => {
     const qty = item.quantity > 1 ? ` (x${item.quantity})` : StringUtils.EMPTY;
-    return `  - ${item.definition.name}${qty}`;
+    const equipped = item.equipped ? " [equipped]" : StringUtils.EMPTY;
+    return `  - ${item.definition.name}${qty}${equipped}`;
   });
 
-  return `\nEquipped Items:\n${items.join("\n")}`;
+  return `\nInventory (${inventory.length} items):\n${items.join("\n")}`;
 }
 
 // ============================================================================

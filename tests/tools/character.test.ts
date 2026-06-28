@@ -229,9 +229,39 @@ describe("getCharacter", () => {
     expect(text).toContain("Level: 5");
     expect(text).toContain("HP: 42/52 (+5 temp)");
     expect(text).toContain("Campaign: Lost Mines of Phandelver");
-    expect(text).toContain("Equipped Items:");
-    expect(text).toContain("Longsword");
-    expect(text).toContain("Plate Armor");
+    expect(text).toContain("Inventory (2 items):");
+    expect(text).toContain("Longsword [equipped]");
+    expect(text).toContain("Plate Armor [equipped]");
+  });
+
+  it("should list unequipped inventory items, marking only equipped ones", async () => {
+    const client = createMockClient();
+    const charWithPack = {
+      ...mockCharacter,
+      inventory: [
+        ...mockCharacter.inventory,
+        {
+          id: 3,
+          definition: { name: "Map to the Ruins", type: "Gear", rarity: "Common", weight: 0, cost: 0, isHomebrew: false, description: "" },
+          equipped: false,
+          quantity: 1,
+        },
+        {
+          id: 4,
+          definition: { name: "Torch", type: "Gear", rarity: "Common", weight: 1, cost: 0, isHomebrew: false, description: "" },
+          equipped: false,
+          quantity: 10,
+        },
+      ],
+    } as unknown as DdbCharacter;
+    vi.mocked(client.get).mockResolvedValue(charWithPack);
+
+    const text = (await getCharacter(client, { characterId: 12345, detail: "summary" })).content[0].text;
+
+    expect(text).toContain("Inventory (4 items):");
+    expect(text).toContain("Map to the Ruins"); // unequipped item is shown
+    expect(text).not.toContain("Map to the Ruins [equipped]"); // but not marked equipped
+    expect(text).toContain("Torch (x10)"); // quantity shown for unequipped
   });
 
   it("should format character data correctly by name with summary detail", async () => {
