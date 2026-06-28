@@ -96,6 +96,9 @@ export const ENDPOINTS = {
     list: () => `${DDB_WATERDEEP}/api/campaign/stt/active-campaigns`,
     userCampaigns: () => `${DDB_WATERDEEP}/api/campaign/stt/user-campaigns`,
     characters: (campaignId: number) => `${DDB_WATERDEEP}/api/campaign/stt/active-short-characters/${campaignId}`,
+    // Shared party inventory (campaign-wide, not owned by any character). Undocumented
+    // character-service endpoint; returns { success, data: { partyItems: [...] } }.
+    partyInventory: (campaignId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/party/inventory/${campaignId}`,
   },
   config: {
     json: () => `${DDB_WATERDEEP}/api/config/json`,

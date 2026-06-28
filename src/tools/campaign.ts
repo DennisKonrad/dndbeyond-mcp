@@ -1,6 +1,6 @@
 import { DdbClient } from "../api/client.js";
 import { ENDPOINTS } from "../api/endpoints.js";
-import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
+import type { DdbCampaign, DdbCampaignCharacter2, DdbPartyInventory } from "../types/api.js";
 
 const CAMPAIGN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -92,6 +92,8 @@ export async function getCampaignCharacters(
     lines.push(`• ${character.name} [ID: ${character.id}] (${character.userName})`);
   }
 
+  lines.push(await formatPartyInventory(client, params.campaignId));
+
   return {
     content: [
       {
@@ -100,4 +102,28 @@ export async function getCampaignCharacters(
       },
     ],
   };
+}
+
+// Fetches and formats the shared party inventory (campaign-wide, not owned by any
+// character). A failure here must not break the roster, so it degrades to a note.
+async function formatPartyInventory(client: DdbClient, campaignId: number): Promise<string> {
+  let inventory: DdbPartyInventory;
+  try {
+    inventory = await client.get<DdbPartyInventory>(
+      ENDPOINTS.campaign.partyInventory(campaignId),
+      `campaign:${campaignId}:party-inventory`,
+      CAMPAIGN_CACHE_TTL
+    );
+  } catch {
+    return "\nParty Inventory: unavailable";
+  }
+
+  const items = inventory?.partyItems ?? [];
+  if (items.length === 0) return "\nParty Inventory: empty";
+
+  const itemLines = items.map((item) => {
+    const qty = item.quantity > 1 ? ` (x${item.quantity})` : "";
+    return `  - ${item.definition.name}${qty}`;
+  });
+  return `\nParty Inventory (${items.length} items):\n${itemLines.join("\n")}`;
 }

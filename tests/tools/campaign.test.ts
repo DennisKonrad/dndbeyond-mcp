@@ -115,6 +115,63 @@ describe("campaign tools", () => {
       expect(result.content[0].text).toContain("Grimjaw [ID: 1003] (player3)");
     });
 
+    it("shouldAppendSharedPartyInventory", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce(sampleCampaigns)
+        .mockResolvedValueOnce(sampleCharacters101)
+        .mockResolvedValueOnce({
+          partyItems: [
+            { id: 1, quantity: 1, definition: { name: "Map", filterType: "Other Gear" } },
+            { id: 2, quantity: 3, definition: { name: "Torch", filterType: "Other Gear" } },
+          ],
+        });
+
+      const text = (await getCampaignCharacters(mockClient, { campaignId: 101 })).content[0].text;
+
+      expect(text).toContain("Party Inventory (2 items):");
+      expect(text).toContain("- Map");
+      expect(text).toContain("- Torch (x3)");
+    });
+
+    it("shouldShowEmptyWhenPartyInventoryHasNoItems", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce(sampleCampaigns)
+        .mockResolvedValueOnce(sampleCharacters101)
+        .mockResolvedValueOnce({ partyItems: [] });
+
+      const text = (await getCampaignCharacters(mockClient, { campaignId: 101 })).content[0].text;
+
+      expect(text).toContain("Party Inventory: empty");
+    });
+
+    it("shouldDegradeGracefullyWhenPartyInventoryFails", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce(sampleCampaigns)
+        .mockResolvedValueOnce(sampleCharacters101)
+        .mockRejectedValueOnce(new Error("404 Not Found"));
+
+      const text = (await getCampaignCharacters(mockClient, { campaignId: 101 })).content[0].text;
+
+      // Roster still renders; inventory degrades to a note instead of throwing.
+      expect(text).toContain("Thorin Stonehammer [ID: 1001]");
+      expect(text).toContain("Party Inventory: unavailable");
+    });
+
+    it("shouldUsePartyInventoryCacheKey", async () => {
+      vi.mocked(mockClient.get)
+        .mockResolvedValueOnce(sampleCampaigns)
+        .mockResolvedValueOnce(sampleCharacters101)
+        .mockResolvedValueOnce({ partyItems: [] });
+
+      await getCampaignCharacters(mockClient, { campaignId: 101 });
+
+      expect(mockClient.get).toHaveBeenCalledWith(
+        expect.stringContaining("/party/inventory/101"),
+        "campaign:101:party-inventory",
+        expect.any(Number)
+      );
+    });
+
     it("shouldHandleCampaignNotFound", async () => {
       vi.mocked(mockClient.get).mockResolvedValue(sampleCampaigns);
 

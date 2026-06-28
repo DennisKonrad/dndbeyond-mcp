@@ -46,3 +46,18 @@ export interface DdbCampaignCharacter2 {
   characterStatus: number;
   isAssigned: boolean;
 }
+
+// Shared party inventory (campaign-wide). Returned by the party-inventory endpoint.
+export interface DdbPartyInventoryItem {
+  id: number;
+  quantity: number;
+  definition: {
+    name: string;
+    filterType?: string;
+    type?: string;
+  };
+}
+
+export interface DdbPartyInventory {
+  partyItems?: DdbPartyInventoryItem[];
+}
