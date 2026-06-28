@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -431,5 +431,58 @@ describe("updateHp with temporary HP", () => {
       ["character:123"]
     );
     expect(result.content[0].text).toContain("(0 temp HP)");
+  });
+});
+
+describe("addPartyInventoryItem", () => {
+  let mockClient: DdbClient;
+
+  beforeEach(() => {
+    mockClient = {
+      post: vi.fn().mockResolvedValue({}),
+    } as unknown as DdbClient;
+  });
+
+  it("should POST a custom item with party-container fields", async () => {
+    const result = await addPartyInventoryItem(mockClient, {
+      campaignId: 7869524,
+      characterId: 167132826,
+      name: "Bierfass",
+      description: "Ein Fass Bier mit 15 Litern feinstem Bier",
+      notes: "15L",
+      weight: 15,
+    });
+
+    expect(mockClient.post).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5.1/custom/item"),
+      {
+        characterId: 167132826,
+        name: "Bierfass",
+        description: "Ein Fass Bier mit 15 Litern feinstem Bier",
+        notes: "15L",
+        quantity: 1,
+        weight: 15,
+        cost: null,
+        containerEntityId: 7869524,
+        containerEntityTypeId: 618115330,
+        partyId: 7869524,
+      },
+      ["campaign:7869524:party-inventory"]
+    );
+    expect(result.content[0].text).toContain('Added "Bierfass" (x1) to the party inventory of campaign 7869524.');
+  });
+
+  it("should default quantity to 1 and weight/cost to null", async () => {
+    await addPartyInventoryItem(mockClient, {
+      campaignId: 101,
+      characterId: 1,
+      name: "Torch",
+    });
+
+    expect(mockClient.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ quantity: 1, weight: null, cost: null, description: "", notes: "" }),
+      ["campaign:101:party-inventory"]
+    );
   });
 });

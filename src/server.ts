@@ -46,6 +46,7 @@ import {
   setMaxHp,
   addCustomProficiency,
   addCustomItem,
+  addPartyInventoryItem,
   updateDescription,
 } from "./tools/character.js";
 import { listCampaigns, getCampaignCharacters } from "./tools/campaign.js";
@@ -339,6 +340,32 @@ export async function startServer(): Promise<void> {
         name: params.name,
         description: params.description,
         quantity: params.quantity,
+      })
+  );
+
+  server.tool(
+    "add_party_inventory_item",
+    "Add a custom item to a campaign's shared party inventory (the campaign-wide pool not owned by any single character). For an item that belongs to one character, use add_custom_item instead. characterId must be a member of the campaign (the acting character).",
+    {
+      campaignId: z.coerce.number().describe("The campaign ID (from list_campaigns)"),
+      characterId: z.coerce.number().describe("ID of one of your characters in that campaign (the acting member)"),
+      name: z.string().describe("Item name"),
+      description: z.string().optional().describe("Item description"),
+      notes: z.string().optional().describe("Short notes (e.g. '15L')"),
+      quantity: z.coerce.number().optional().describe("Quantity (default 1)"),
+      weight: z.coerce.number().optional().describe("Weight in lb"),
+      cost: z.coerce.number().optional().describe("Cost in gp"),
+    },
+    async (params) =>
+      addPartyInventoryItem(client, {
+        campaignId: params.campaignId,
+        characterId: params.characterId,
+        name: params.name,
+        description: params.description,
+        notes: params.notes,
+        quantity: params.quantity,
+        weight: params.weight,
+        cost: params.cost,
       })
   );
 

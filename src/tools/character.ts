@@ -2385,6 +2385,54 @@ export async function addCustomItem(
   return { content: [{ type: "text", text: `Added custom item "${params.name}" (x${params.quantity ?? 1}) to character ${params.characterId}.` }] };
 }
 
+// D&D Beyond's entityTypeId for the shared party-inventory container.
+const PARTY_CONTAINER_ENTITY_TYPE_ID = 618115330;
+
+interface AddPartyInventoryItemParams {
+  campaignId: number;
+  characterId: number;
+  name: string;
+  description?: string;
+  notes?: string;
+  quantity?: number;
+  weight?: number;
+  cost?: number;
+}
+
+export async function addPartyInventoryItem(
+  client: DdbClient,
+  params: AddPartyInventoryItemParams
+): Promise<ToolResult> {
+  const quantity = params.quantity ?? 1;
+  // Same custom-item endpoint as for characters, but the container fields route the
+  // item into the campaign-wide party inventory instead of the character's own pack.
+  // characterId is the acting member; container/partyId point at the campaign.
+  await client.post(
+    ENDPOINTS.character.inventory.partyCustomItem(),
+    {
+      characterId: params.characterId,
+      name: params.name,
+      description: params.description ?? "",
+      notes: params.notes ?? "",
+      quantity,
+      weight: params.weight ?? null,
+      cost: params.cost ?? null,
+      containerEntityId: params.campaignId,
+      containerEntityTypeId: PARTY_CONTAINER_ENTITY_TYPE_ID,
+      partyId: params.campaignId,
+    },
+    [`campaign:${params.campaignId}:party-inventory`]
+  );
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Added "${params.name}" (x${quantity}) to the party inventory of campaign ${params.campaignId}.`,
+      },
+    ],
+  };
+}
+
 // ============================================================================
 // DESCRIPTION FIELDS
 // ============================================================================

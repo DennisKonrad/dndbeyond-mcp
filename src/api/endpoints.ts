@@ -51,6 +51,9 @@ export const ENDPOINTS = {
       // Working bulk-currency endpoint (replaces the deprecated per-id path above)
       currency: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency`,
       customItem: () => `${DDB_CHARACTER_SERVICE}/character/v5/custom/item`,
+      // Same custom-item endpoint (v5.1) that also accepts party-container fields,
+      // used to add a custom item to the shared party inventory instead of a character.
+      partyCustomItem: () => `${DDB_CHARACTER_SERVICE}/character/v5.1/custom/item`,
       // Equip / unequip an inventory item. Body: { characterId, id, value: boolean }.
       // A weapon only shows up as an attack action once it is equipped.
       equipped: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item/equipped`,
