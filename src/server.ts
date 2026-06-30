@@ -54,6 +54,7 @@ import {
   updateDescription,
 } from "./tools/character.js";
 import { listCampaigns, getCampaignCharacters, getPartyStatus } from "./tools/campaign.js";
+import { createHomebrewItem } from "./tools/homebrew.js";
 import {
   searchSpells,
   getSpell,
@@ -364,6 +365,60 @@ export async function startServer(): Promise<void> {
         description: params.description,
         quantity: params.quantity,
       })
+  );
+
+  server.tool(
+    "create_homebrew_item",
+    "Create a REAL, mechanically-effective homebrew magic item on D&D Beyond — one whose modifiers (e.g. +1 initiative, +2 AC, advantage on a save) actually apply on the character sheet once equipped. Unlike add_custom_item (flavor text only, grants no stats), this builds a homebrew item definition with grantedModifiers by copying a clean base item and attaching modifiers. Returns the item id + entityTypeId. Pass characterId to also add it to a character (then equip_item to activate), and/or campaignId to drop it into that campaign's shared party inventory (modifiers travel with it; they apply once a member takes and equips it). NOTE: D&D Beyond cannot model 'once-per-day' limited-use item effects — put such wording in the description and track uses manually.",
+    {
+      name: z.string().describe("Item name, e.g. 'Halskette des Kriegshäuptling'"),
+      rarity: z.string().describe("common, uncommon, rare, very rare, legendary, or artifact"),
+      modifiers: z
+        .array(
+          z.object({
+            type: z.string().describe("Modifier type: bonus, advantage, disadvantage, set, resistance, immunity, damage, proficiency, expertise, sense, etc."),
+            subType: z.string().optional().describe("Subtype display name, e.g. 'Initiative', 'Armor Class', 'Strength Score', 'Wisdom Saving Throws', 'Fire' (for resistance), 'Hit Points'"),
+            value: z.coerce.number().optional().describe("Flat value for bonus/set (e.g. 1 for +1)"),
+            dice: z.string().optional().describe("Dice expression for dice-based bonuses, e.g. '1d4'"),
+            restriction: z.string().optional().describe("Free-text restriction note"),
+            requiresAttunement: z.boolean().optional().describe("This modifier only applies while attuned"),
+          }),
+        )
+        .optional()
+        .describe("Granted modifiers that apply when the item is equipped"),
+      description: z.string().optional().describe("Item description (also use for once-per-day wording)"),
+      charges: z.coerce.number().optional().describe("Limited-use charges — renders a tickable counter on the sheet (e.g. 1 for once-per-day)"),
+      chargeReset: z.string().optional().describe("When charges reset: 'short rest', 'long rest', 'dawn' (default), 'consumable', 'other'"),
+      slot: z.string().optional().describe("Clean base preset: amulet/necklace (default) or wondrous"),
+      baseItemId: z.coerce.number().optional().describe("Advanced: explicit clean base item id to copy"),
+      baseTypeId: z.coerce.number().optional().describe("magic-item-type id for an explicit baseItemId (10=Wondrous)"),
+      requiresAttunement: z.boolean().optional().describe("Whether the item itself requires attunement"),
+      attunementDescription: z.string().optional().describe("Attunement requirement text"),
+      weight: z.coerce.number().optional().describe("Weight in lb"),
+      notes: z.string().optional().describe("Private notes"),
+      characterId: z.coerce.number().optional().describe("If set, also add the finished item to this character"),
+      campaignId: z.coerce.number().optional().describe("If set, also drop the item into this campaign's shared party inventory"),
+      actingCharacterId: z.coerce.number().optional().describe("Acting campaign member for the party drop (defaults to first roster member)"),
+    },
+    async (params) =>
+      createHomebrewItem(client, {
+        name: params.name,
+        rarity: params.rarity,
+        modifiers: params.modifiers,
+        description: params.description,
+        slot: params.slot,
+        baseItemId: params.baseItemId,
+        baseTypeId: params.baseTypeId,
+        requiresAttunement: params.requiresAttunement,
+        attunementDescription: params.attunementDescription,
+        weight: params.weight,
+        notes: params.notes,
+        charges: params.charges,
+        chargeReset: params.chargeReset,
+        characterId: params.characterId,
+        campaignId: params.campaignId,
+        actingCharacterId: params.actingCharacterId,
+      }),
   );
 
   server.tool(

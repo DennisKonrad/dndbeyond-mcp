@@ -3,7 +3,7 @@
     "dndbeyond": {
       "command": "node",
       "args": ["build/src/index.js"],
-      "cwd": "/Users/alexworland/dndbeyond-mcp"
+      "cwd": "/home/niklas/claude/DNDBeyond_MCP/dndbeyond-mcp"
     }
   }
 }
