@@ -112,4 +112,21 @@ export const ENDPOINTS = {
   config: {
     json: () => `${DDB_WATERDEEP}/api/config/json`,
   },
+  // The homebrew magic-item builder is a server-rendered, CSRF-protected HTML form
+  // on www.dndbeyond.com — NOT a JSON API. A real (mechanically-effective) item is
+  // created by copying a base item, then editing core fields; granted modifiers are
+  // managed through a separate /modifier flow keyed by the item's entityTypeId.
+  homebrew: {
+    // entityTypeId of a magic-item definition. Used both in the modifier-create URL
+    // and as the entityTypeId when adding the finished item to a character inventory.
+    MAGIC_ITEM_ENTITY_TYPE_ID: 112130694,
+    createMagicItem: () => `${DDB_WATERDEEP}/homebrew/creations/create-magic-item`,
+    // Slug-free editor view: D&D Beyond redirects this to the canonical
+    // /magic-items/{id}-{slug}/edit page, so we never have to guess the slug.
+    editMagicItem: (itemId: number, entityTypeId: number = 112130694) =>
+      `${DDB_WATERDEEP}/homebrew/creations/edit?entityTypeId=${entityTypeId}&id=${itemId}`,
+    createModifier: (itemId: number, entityTypeId: number) =>
+      `${DDB_WATERDEEP}/modifier/create/${itemId}-${entityTypeId}/0`,
+    deleteModifier: (modifierId: number) => `${DDB_WATERDEEP}/modifier/${modifierId}/delete`,
+  },
 } as const;
