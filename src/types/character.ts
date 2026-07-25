@@ -139,6 +139,8 @@ export interface DdbSpell {
 export interface DdbInventoryItem {
   id: number;
   definition: {
+    // Present on custom items; the write endpoint takes THIS id, not the entry id.
+    id?: number;
     name: string;
     description: string;
     type: string;
@@ -146,6 +148,7 @@ export interface DdbInventoryItem {
     weight: number;
     cost: number | null;
     isHomebrew: boolean;
+    isCustomItem?: boolean;
     armorClass?: number | null;
     filterType?: string;
     armorTypeId?: number | null; // 1=light, 2=medium, 3=heavy, 4=shield

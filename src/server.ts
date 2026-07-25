@@ -48,6 +48,7 @@ import {
   setXp,
   addCustomProficiency,
   addCustomItem,
+  updateCustomItem,
   addPartyInventoryItem,
   removePartyInventoryItem,
   updatePartyInventoryItem,
@@ -364,6 +365,32 @@ export async function startServer(): Promise<void> {
         name: params.name,
         description: params.description,
         quantity: params.quantity,
+      })
+  );
+
+  server.tool(
+    "update_custom_item",
+    "Edit a custom item in a character's inventory in place, keeping its entry id. Identify it by itemName or itemId. Only the fields you pass change; the rest are preserved from the current item. Works on custom items only — not on items with a D&D Beyond definition.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      itemName: z.string().optional().describe("Item name (exact, else fuzzy match) — use this or itemId"),
+      itemId: z.coerce.number().optional().describe("Inventory entry id — use this or itemName"),
+      name: z.string().optional().describe("New name"),
+      description: z.string().optional().describe("New description"),
+      quantity: z.coerce.number().optional().describe("New quantity"),
+      weight: z.coerce.number().optional().describe("New weight in lb"),
+      cost: z.coerce.number().optional().describe("New cost in gp"),
+    },
+    async (params) =>
+      updateCustomItem(client, {
+        characterId: params.characterId,
+        itemName: params.itemName,
+        itemId: params.itemId,
+        name: params.name,
+        description: params.description,
+        quantity: params.quantity,
+        weight: params.weight,
+        cost: params.cost,
       })
   );
 

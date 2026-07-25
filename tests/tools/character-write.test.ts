@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem, setXp, removeInventoryItem } from "../../src/tools/character.js";
+import { updateHp, updateSpellSlots, updateDeathSaves, updateCurrency, useAbility, addPartyInventoryItem, removePartyInventoryItem, updatePartyInventoryItem, setXp, removeInventoryItem, updateCustomItem } from "../../src/tools/character.js";
 import type { DdbClient } from "../../src/api/client.js";
 import type { DdbCharacter } from "../../src/types/character.js";
 
@@ -189,6 +189,106 @@ describe("removeInventoryItem", () => {
 
     expect(mockClient.delete).not.toHaveBeenCalled();
     expect(result.content[0].text).toContain("No inventory item with entry id 555");
+  });
+});
+
+describe("updateCustomItem", () => {
+  // Entry id 555 is the inventory line; definition id 35677399 is what the
+  // write endpoint takes. Conflating the two is the obvious failure mode.
+  const CUSTOM_ENTRY = {
+    id: 555,
+    quantity: 2,
+    definition: {
+      id: 35677399,
+      name: "Heiltrank (1W4+2)",
+      description: "Heilt 1W4+2 TP.",
+      weight: 0.5,
+      cost: 25,
+      isCustomItem: true,
+    },
+  };
+
+  function makeClient(inventory: unknown[] = [CUSTOM_ENTRY]): DdbClient {
+    return {
+      get: vi.fn().mockResolvedValue({ inventory }),
+      put: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+  }
+
+  it("PUTs the DEFINITION id, not the inventory entry id", async () => {
+    const mockClient = makeClient();
+
+    await updateCustomItem(mockClient, { characterId: 123, itemId: 555, name: "Heiltrank (1W12+6)" });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/custom/item"),
+      expect.objectContaining({ characterId: 123, id: 35677399 }),
+      ["character:123"]
+    );
+  });
+
+  it("preserves unspecified fields from the current item", async () => {
+    const mockClient = makeClient();
+
+    await updateCustomItem(mockClient, { characterId: 123, itemId: 555, name: "Heiltrank (1W12+6)" });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        characterId: 123,
+        id: 35677399,
+        name: "Heiltrank (1W12+6)",
+        description: "Heilt 1W4+2 TP.",
+        quantity: 2,
+        weight: 0.5,
+        cost: 25,
+      },
+      ["character:123"]
+    );
+  });
+
+  it("resolves the entry by name when no id is given", async () => {
+    const mockClient = makeClient();
+
+    const result = await updateCustomItem(mockClient, { characterId: 123, itemName: "heiltrank (1w4+2)", quantity: 3 });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 35677399, quantity: 3 }),
+      ["character:123"]
+    );
+    expect(result.content[0].text).toContain("entry 555");
+  });
+
+  it("refuses to edit an item that is not custom", async () => {
+    const mockClient = makeClient([
+      { id: 777, quantity: 1, definition: { id: 12, name: "Greatsword", isCustomItem: false } },
+    ]);
+
+    const result = await updateCustomItem(mockClient, { characterId: 123, itemId: 777, name: "Nope" });
+
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("is not a custom item");
+  });
+
+  it("does not PUT when the item cannot be found", async () => {
+    const mockClient = makeClient();
+
+    const result = await updateCustomItem(mockClient, { characterId: 123, itemId: 999, name: "Nope" });
+
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("No inventory item with entry id 999");
+  });
+
+  it("requires either itemId or itemName", async () => {
+    const mockClient = makeClient();
+
+    const result = await updateCustomItem(mockClient, { characterId: 123, name: "Nope" });
+
+    expect(mockClient.get).not.toHaveBeenCalled();
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("Pass either itemId");
   });
 });
 

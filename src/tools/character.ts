@@ -2498,6 +2498,95 @@ export async function addCustomItem(
   return { content: [{ type: "text", text: `Added custom item "${params.name}" (x${params.quantity ?? 1}) to character ${params.characterId}.` }] };
 }
 
+interface UpdateCustomItemParams {
+  characterId: number;
+  itemId?: number;
+  itemName?: string;
+  name?: string;
+  description?: string;
+  quantity?: number;
+  weight?: number;
+  cost?: number;
+}
+
+/**
+ * Edit a custom item in a character's inventory in place, keeping its entry id.
+ *
+ * The write takes the custom-item DEFINITION id, not the inventory entry id, so
+ * the entry is resolved first. Unlike the party variant this endpoint is v5 and
+ * needs neither mappingId nor container fields.
+ *
+ * The PUT replaces the whole item, so unspecified fields are merged from the
+ * current definition — sending only a name would otherwise blank weight, cost
+ * and description.
+ */
+export async function updateCustomItem(
+  client: DdbClient,
+  params: UpdateCustomItemParams
+): Promise<ToolResult> {
+  if (params.itemId == null && !params.itemName) {
+    return { content: [{ type: "text", text: "Pass either itemId (inventory entry id) or itemName." }] };
+  }
+
+  const cacheKey = `character:${params.characterId}`;
+  // Re-read fresh: the merge below is only correct against current values.
+  client.invalidateCache(cacheKey);
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    cacheKey,
+    60_000
+  );
+
+  const inventory = character.inventory ?? [];
+  let entry = params.itemId != null
+    ? inventory.find((i) => i.id === params.itemId)
+    : undefined;
+
+  if (!entry && params.itemName) {
+    const names = inventory.map((i) => i.definition?.name).filter(Boolean) as string[];
+    const search = params.itemName.toLowerCase();
+    entry = inventory.find((i) => i.definition?.name?.toLowerCase() === search);
+    if (!entry) {
+      const matches = fuzzyMatch(params.itemName, names, 3);
+      if (matches.length > 1) {
+        return { content: [{ type: "text", text: `Item "${params.itemName}" is ambiguous. Did you mean: ${matches.join(", ")}?` }] };
+      }
+      entry = inventory.find((i) => i.definition?.name === matches[0]);
+    }
+  }
+
+  if (!entry) {
+    const which = params.itemId != null ? `entry id ${params.itemId}` : `name "${params.itemName}"`;
+    return { content: [{ type: "text", text: `No inventory item with ${which} on character ${params.characterId}.` }] };
+  }
+
+  const def = entry.definition;
+  if (!def?.isCustomItem) {
+    return { content: [{ type: "text", text: `"${def?.name ?? "Item"}" is not a custom item — only custom items can be edited this way.` }] };
+  }
+  if (def.id == null) {
+    return { content: [{ type: "text", text: `"${def.name}" has no custom-item definition id and cannot be edited.` }] };
+  }
+
+  await client.put(
+    ENDPOINTS.character.inventory.customItem(),
+    {
+      characterId: params.characterId,
+      id: def.id,
+      name: params.name ?? def.name,
+      description: params.description ?? def.description ?? "",
+      quantity: params.quantity ?? entry.quantity,
+      weight: params.weight ?? def.weight ?? null,
+      cost: params.cost ?? def.cost ?? null,
+    },
+    [cacheKey]
+  );
+
+  return {
+    content: [{ type: "text", text: `Updated "${params.name ?? def.name}" (entry ${entry.id}) on character ${params.characterId}.` }],
+  };
+}
+
 // D&D Beyond's entityTypeId for the shared party-inventory container.
 const PARTY_CONTAINER_ENTITY_TYPE_ID = 618115330;
 
