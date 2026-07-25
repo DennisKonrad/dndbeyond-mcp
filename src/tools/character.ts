@@ -1835,11 +1835,21 @@ export async function shortRest(
   client: DdbClient,
   params: ShortRestParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  // There is no working write path for a short rest. The GET route is only a
-  // preview (200 success, no state change), and the POST that applies a long
-  // rest answers 500 for every short-rest body tried. Report what D&D Beyond
-  // says a short rest would restore, and be explicit that nothing was applied —
-  // claiming success here is exactly the bug that hid the long-rest failure.
+  // No working write path for a short rest, though one demonstrably exists on
+  // D&D Beyond's side: their own bundle declares
+  // postCharacterRestShort = POST character/rest/short (main.8c2ee2e8.js), the
+  // sibling of the long-rest POST this tool now uses successfully.
+  //
+  // Every body derived from that client answers 500 — including the shape the
+  // sheet builds, shortRest(hitDiceUsed, resetMaxHpModifier) with hitDiceUsed
+  // keyed by class mapping id. v5 is the only accepted version (v5.1 and v6
+  // answer UnsupportedApiVersion), so it is not a routing problem. Driving the
+  // real sheet through a browser produced no request at all on confirm.
+  //
+  // Emulating a rest by resetting resources one by one was considered and
+  // rejected: it would silently diverge from D&D Beyond's own rules. So report
+  // the preview and be explicit that nothing was applied — claiming success is
+  // exactly the bug that hid the long-rest failure.
   let preview = "";
   try {
     const res = await client.get<{ data?: string } | string>(
@@ -1858,7 +1868,7 @@ export async function shortRest(
     content: [
       {
         type: "text",
-        text: `⚠️  Short rest was NOT applied to character ${params.characterId}.\n\nD&D Beyond exposes no working endpoint for applying a short rest — the documented route only returns preview text. Apply it on the site, or adjust the affected resources directly with use_ability / update_hp.${wouldRestore}`,
+        text: `⚠️  Short rest was NOT applied to character ${params.characterId}.\n\nD&D Beyond's short-rest write endpoint exists but rejects every known request shape with a server error, so nothing was changed. Take the rest on the site, or adjust the affected resources directly with use_ability / update_hp.${wouldRestore}`,
       },
     ],
   };

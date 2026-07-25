@@ -19,10 +19,11 @@ export const ENDPOINTS = {
       // reporting success is a silent no-op.
       //
       // Applying a rest is a POST with { characterId } in the body. Verified
-      // end to end for long rest. For short rest the body shape is still
-      // unknown: POST answers 500 for { characterId } alone and for every
-      // variant tried (hitDiceUsed, hitDice, spentHitDice, hitPointsToRestore,
-      // restType), so short rest has no working write path yet.
+      // end to end for long rest. Short rest has the same POST route in D&D
+      // Beyond's own client (postCharacterRestShort), but it answers 500 for
+      // every body derived from that client — including hitDiceUsed keyed by
+      // class mapping id plus resetMaxHpModifier, which is what the sheet
+      // sends. v5 is the only accepted version. Treated as unavailable.
       shortPreview: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
       long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
