@@ -54,11 +54,14 @@ export interface DdbRace {
 }
 
 export interface DdbClass {
+  // Mapping id of this class on the character — the key the short-rest write
+  // expects in classHitDiceUsed, not the class definition id.
   id: number;
   definition: { id: number; name: string };
   subclassDefinition: { name: string; classFeatures: DdbClassFeature[] } | null;
   level: number;
   isStartingClass: boolean;
+  hitDiceUsed?: number;
   classFeatures: DdbClassFeature[];
 }
 
@@ -186,7 +189,10 @@ export interface DdbLimitedUse {
   // the real cap is maxUses + proficiency bonus (Stonecunning ships as maxUses 0).
   maxUses: number;
   numberUsed: number;
-  resetType: number; // 1 = Long Rest, 2 = Short Rest
+  // 1 = Short Rest, 2 = Long Rest, 3 = Day. Verified 2026-07-25: Stonecunning
+  // and Rage both read "regain uses on a Long Rest" and both carry resetType 2,
+  // and a successful short rest left a resetType-2 resource untouched.
+  resetType: number;
   resetTypeDescription: string;
   useProficiencyBonus?: boolean;
   proficiencyBonusOperator?: number; // 1 = add (the only value observed so far)

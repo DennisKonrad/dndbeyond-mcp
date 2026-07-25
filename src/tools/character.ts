@@ -1752,6 +1752,11 @@ interface LongRestParams {
 
 interface ShortRestParams {
   characterId: number;
+  // Absolute hit dice used per class after the rest, keyed by the class's
+  // inventory-style mapping id (character.classes[].id) — NOT a delta. Omit to
+  // spend none and keep each class at its current count.
+  classHitDiceUsed?: Record<string, number>;
+  resetMaxHpModifier?: boolean;
 }
 
 interface UseAbilityParams {
@@ -1835,40 +1840,45 @@ export async function shortRest(
   client: DdbClient,
   params: ShortRestParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  // No working write path for a short rest, though one demonstrably exists on
-  // D&D Beyond's side: their own bundle declares
-  // postCharacterRestShort = POST character/rest/short (main.8c2ee2e8.js), the
-  // sibling of the long-rest POST this tool now uses successfully.
-  //
-  // Every body derived from that client answers 500 — including the shape the
-  // sheet builds, shortRest(hitDiceUsed, resetMaxHpModifier) with hitDiceUsed
-  // keyed by class mapping id. v5 is the only accepted version (v5.1 and v6
-  // answer UnsupportedApiVersion), so it is not a routing problem. Driving the
-  // real sheet through a browser produced no request at all on confirm.
-  //
-  // Emulating a rest by resetting resources one by one was considered and
-  // rejected: it would silently diverge from D&D Beyond's own rules. So report
-  // the preview and be explicit that nothing was applied — claiming success is
-  // exactly the bug that hid the long-rest failure.
-  let preview = "";
-  try {
-    const res = await client.get<{ data?: string } | string>(
-      ENDPOINTS.character.rest.shortPreview(params.characterId),
-      `rest:short-preview:${params.characterId}`,
-      0
-    );
-    preview = typeof res === "string" ? res : res?.data ?? "";
-  } catch {
-    // Preview text is a nicety; its absence must not mask the real message.
-  }
-  client.invalidateCache(`character:${params.characterId}`);
+  // POST with characterId AND classHitDiceUsed. The field name is the whole
+  // trick: the sheet keeps it as "hitDiceUsed" in component state and renames
+  // it to classHitDiceUsed when dispatching, so every body built from the
+  // visible name answers 500. Values are ABSOLUTE totals after the rest.
+  const cacheKey = `character:${params.characterId}`;
+  client.invalidateCache(cacheKey);
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    cacheKey,
+    60_000
+  );
 
-  const wouldRestore = preview ? `\n\nD&D Beyond reports a short rest would restore: ${preview}` : "";
+  // Default to each class's current count: take the rest without spending dice.
+  const classHitDiceUsed = params.classHitDiceUsed ?? Object.fromEntries(
+    (character.classes ?? []).map((c) => [String(c.id), c.hitDiceUsed ?? 0])
+  );
+
+  await client.post<unknown>(
+    ENDPOINTS.character.rest.short(),
+    {
+      characterId: params.characterId,
+      classHitDiceUsed,
+      resetMaxHpModifier: params.resetMaxHpModifier ?? false,
+    },
+    [cacheKey]
+  );
+
+  const spent = Object.entries(classHitDiceUsed)
+    .map(([id, used]) => {
+      const cls = (character.classes ?? []).find((c) => String(c.id) === id);
+      return `${cls?.definition?.name ?? id}: ${used} hit dice used`;
+    })
+    .join(", ");
+
   return {
     content: [
       {
         type: "text",
-        text: `⚠️  Short rest was NOT applied to character ${params.characterId}.\n\nD&D Beyond's short-rest write endpoint exists but rejects every known request shape with a server error, so nothing was changed. Take the rest on the site, or adjust the affected resources directly with use_ability / update_hp.${wouldRestore}`,
+        text: `Short rest completed for character ${params.characterId}. Short-rest abilities have been restored.${spent ? `\n\n${spent}` : ""}`,
       },
     ],
   };

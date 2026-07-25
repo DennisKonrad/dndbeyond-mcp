@@ -571,13 +571,20 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "short_rest",
-    "Perform a short rest: resets pact magic, short-rest abilities, and handles hit dice (server-side)",
+    "Perform a short rest: resets pact magic and short-rest abilities, and spends hit dice (server-side). Pass classHitDiceUsed to spend hit dice; omit it to rest without spending any.",
     {
       characterId: z.coerce.number().describe("The character ID"),
+      classHitDiceUsed: z
+        .record(z.string(), z.coerce.number())
+        .optional()
+        .describe("Absolute hit dice used per class after the rest, keyed by character.classes[].id (not a delta). Omit to keep current counts."),
+      resetMaxHpModifier: z.boolean().optional().describe("Reset maximum-HP changes during this rest (default false)"),
     },
     async (params) =>
       shortRest(client, {
         characterId: params.characterId,
+        classHitDiceUsed: params.classHitDiceUsed,
+        resetMaxHpModifier: params.resetMaxHpModifier,
       })
   );
 

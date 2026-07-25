@@ -18,13 +18,13 @@ export const ENDPOINTS = {
       // measured 2026-07-25 on a throwaway character. Calling them and
       // reporting success is a silent no-op.
       //
-      // Applying a rest is a POST with { characterId } in the body. Verified
-      // end to end for long rest. Short rest has the same POST route in D&D
-      // Beyond's own client (postCharacterRestShort), but it answers 500 for
-      // every body derived from that client — including hitDiceUsed keyed by
-      // class mapping id plus resetMaxHpModifier, which is what the sheet
-      // sends. v5 is the only accepted version. Treated as unavailable.
+      // Applying a rest is a POST with characterId in the BODY. Short rest also
+      // needs classHitDiceUsed — the field name comes from D&D Beyond's own
+      // action creator, shortRest(classHitDiceUsed, resetMaxHpModifier); the
+      // sheet holds it as "hitDiceUsed" locally and renames it on dispatch,
+      // which is why every body using that local name answered 500.
       shortPreview: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
+      short: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short`,
       long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
     // Deprecated v5 endpoints (return 404, kept for reference)
