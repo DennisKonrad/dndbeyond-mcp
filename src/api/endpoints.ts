@@ -12,8 +12,14 @@ export const ENDPOINTS = {
     setInspiration: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/inspiration`,
     condition: () => `${DDB_CHARACTER_SERVICE}/character/v5/condition`,
     rest: {
+      // Short rest still uses the old query-string GET. Its POST contract could
+      // not be established: POST answers 500 for every body tried (2026-07-25).
       short: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
-      long: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long?characterId=${characterId}`,
+      // Long rest is a POST taking { characterId } in the BODY — probed against
+      // a foreign id: an empty body answers 400 "Invalid parameter: characterId",
+      // and { characterId } gets through to the ownership check. The query
+      // string is ignored, so it is gone.
+      long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
     // Deprecated v5 endpoints (return 404, kept for reference)
     updateSpellSlots: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/spell/slots`,

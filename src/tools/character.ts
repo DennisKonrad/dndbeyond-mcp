@@ -1810,13 +1810,14 @@ export async function longRest(
   params: LongRestParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
   // Server-side long rest handles all resets atomically:
-  // HP, spell slots, pact magic, limited-use abilities, hit dice, death saves
-  await client.get<unknown>(
-    ENDPOINTS.character.rest.long(params.characterId),
-    `rest:long:${params.characterId}:${Date.now()}`,
-    0
+  // HP, spell slots, pact magic, limited-use abilities, hit dice, death saves.
+  // It is a POST with characterId in the BODY — the previous GET could not have
+  // worked, since the endpoint reads characterId from the body, not the query.
+  await client.post<unknown>(
+    ENDPOINTS.character.rest.long(),
+    { characterId: params.characterId },
+    [`character:${params.characterId}`]
   );
-  client.invalidateCache(`character:${params.characterId}`);
 
   return {
     content: [
