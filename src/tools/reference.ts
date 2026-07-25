@@ -1210,6 +1210,9 @@ interface DdbRace {
   isSubRace: boolean;
   size: string;
   sources: Array<{ sourceId: number }>;
+  // Each race carries its own traits inline — this is the only working source
+  // for racial traits (see searchRacialTraits).
+  racialTraits?: Array<{ definition?: DdbRacialTraitDefinition }>;
 }
 
 /**
@@ -1389,32 +1392,59 @@ export async function searchClassFeatures(
 
 // --- Racial trait types ---
 
+interface DdbRacialTraitDefinition {
+  id: number;
+  name: string;
+  description: string;
+  snippet: string;
+}
+
 interface DdbRacialTrait {
   id: number;
   name: string;
   description: string;
   snippet: string;
-  raceId: number;
   raceName?: string;
-  isHomebrew: boolean;
-  sources: Array<{ sourceId: number }>;
 }
 
 /**
  * Search for racial traits by name or race.
+ *
+ * Sourced from the races catalogue, which carries each race's traits inline.
+ * The dedicated racial-trait/collection endpoint is NOT usable: it answers 200
+ * with an empty definitionData array for every parameter combination tried
+ * (bare, sharingSetting, ids, raceId), so it yields no traits at all.
  */
 export async function searchRacialTraits(
   client: DdbClient,
   params: RacialTraitSearchParams
 ): Promise<ToolResult> {
-  const cacheKey = "game-data:racial-traits";
-  const traits = await client.get<DdbRacialTrait[]>(
-    ENDPOINTS.gameData.racialTraitCollection(),
+  const cacheKey = "game-data:races";
+  const payload = await client.get<DdbRace[]>(
+    ENDPOINTS.gameData.races(),
     cacheKey,
     86_400_000,
   );
 
-  let matched = traits ?? [];
+  // Guard the shape rather than trusting it: feeding a non-array payload into
+  // an array method is exactly what made this tool throw before.
+  const races = Array.isArray(payload) ? payload : [];
+
+  const traits: DdbRacialTrait[] = races.flatMap((race) =>
+    (race.racialTraits ?? []).flatMap((entry) => {
+      const def = entry.definition;
+      if (!def?.name) return [];
+      return [{
+        id: def.id,
+        name: def.name,
+        description: def.description,
+        snippet: def.snippet,
+        raceName: race.fullName || race.baseName,
+      }];
+    })
+  );
+
+  let matched = traits;
 
   if (params.name) {
     const searchName = params.name.toLowerCase();
@@ -1439,9 +1469,12 @@ export async function searchRacialTraits(
   matched = matched.slice(0, 30);
 
   if (matched.length === 0) {
-    return {
-      content: [{ type: "text", text: "No racial traits found matching the search criteria." }],
-    };
+    // Separate "your filter matched nothing" from "the catalogue came back
+    // empty" — the second is an upstream problem, not a search result.
+    const text = traits.length === 0
+      ? "The races catalogue returned no racial traits at all — the upstream data is unavailable, not merely unmatched."
+      : "No racial traits found matching the search criteria.";
+    return { content: [{ type: "text", text }] };
   }
 
   const lines = [`# Racial Trait Search Results (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
