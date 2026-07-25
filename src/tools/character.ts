@@ -2385,11 +2385,24 @@ export async function removeInventoryItem(
     return { content: [{ type: "text", text: `No inventory item with entry id ${params.itemId} on character ${params.characterId}.` }] };
   }
 
-  await client.delete(
-    ENDPOINTS.character.inventory.removeItem(),
-    { characterId: params.characterId, id: params.itemId },
-    [`character:${params.characterId}`]
-  );
+  const def = entry.definition;
+  if (def?.isCustomItem && def.id != null) {
+    // Custom items need the custom-item endpoint, keyed by DEFINITION id plus
+    // the inventory mapping. Deleting only the inventory entry leaves the
+    // definition behind, and D&D Beyond re-materialises it under a fresh entry
+    // id — the item looks removed, reports removed, and is still there.
+    await client.delete(
+      ENDPOINTS.character.inventory.customItem(),
+      { characterId: params.characterId, id: def.id, mappingId: params.itemId },
+      [`character:${params.characterId}`]
+    );
+  } else {
+    await client.delete(
+      ENDPOINTS.character.inventory.removeItem(),
+      { characterId: params.characterId, id: params.itemId },
+      [`character:${params.characterId}`]
+    );
+  }
   return { content: [{ type: "text", text: `Removed "${entry.definition?.name ?? "item"}" (entry ${params.itemId}) from character ${params.characterId}.` }] };
 }
 

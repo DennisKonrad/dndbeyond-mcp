@@ -178,6 +178,26 @@ describe("removeInventoryItem", () => {
     expect(result.content[0].text).toContain('Removed "Fire Opal"');
   });
 
+  it("routes custom items to the custom-item endpoint", async () => {
+    // The plain inventory delete only drops the mapping; the definition stays
+    // and D&D Beyond re-creates the entry, so the item silently survives.
+    const mockClient = {
+      get: vi.fn().mockResolvedValue({
+        inventory: [{ id: 555, definition: { id: 35678564, name: "Goodberry", isCustomItem: true } }],
+      }),
+      delete: vi.fn().mockResolvedValue({}),
+      invalidateCache: vi.fn(),
+    } as unknown as DdbClient;
+
+    await removeInventoryItem(mockClient, { characterId: 123, itemId: 555 });
+
+    expect(mockClient.delete).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/custom/item"),
+      { characterId: 123, id: 35678564, mappingId: 555 },
+      ["character:123"]
+    );
+  });
+
   it("does not DELETE when the entry id is absent", async () => {
     const mockClient = {
       get: vi.fn().mockResolvedValue({ inventory: [{ id: 999, definition: { name: "Other" } }] }),
