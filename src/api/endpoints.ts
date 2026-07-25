@@ -88,8 +88,9 @@ export const ENDPOINTS = {
       `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-prepared-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2`,
     // Both /collection endpoints are dead ends, verified 2026-07-25:
     // class-feature answers 404, racial-trait answers 200 with an empty
-    // definitionData for every parameter combination tried. Racial traits come
-    // from races() instead; class features have no known working source yet.
+    // definitionData for every parameter combination tried. Unused — class
+    // features come from classes(), racial traits from races(); both catalogues
+    // carry them inline. Kept only to document the dead ends.
     classFeatureCollection: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/class-feature/collection`,
     racialTraitCollection: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/racial-trait/collection`,
   },

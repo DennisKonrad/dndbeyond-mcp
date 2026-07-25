@@ -1100,7 +1100,15 @@ interface DdbClass {
   spellCastingAbilityId: number | null;
   subclasses?: Array<{ id: number; name: string; description: string }>;
   sources: Array<{ sourceId: number }>;
-  classFeatures?: Array<{ id: number; name: string; description: string; level: number }>;
+  // Inline on each class in the live payload — the only working source for
+  // class features (see searchClassFeatures). Note requiredLevel, not level.
+  classFeatures?: Array<{
+    id: number;
+    name: string;
+    description: string;
+    requiredLevel: number;
+    summary?: string;
+  }>;
 }
 
 /**
@@ -1318,29 +1326,44 @@ interface DdbClassFeature {
   id: number;
   name: string;
   description: string;
-  snippet: string;
+  summary?: string;
   requiredLevel: number;
-  classId: number;
   className?: string;
-  isHomebrew: boolean;
-  sources: Array<{ sourceId: number }>;
+  sourceIds?: number[];
 }
 
 /**
  * Search for class features by name, class, or level.
+ *
+ * Sourced from the classes catalogue, which carries each class's features
+ * inline. The dedicated class-feature/collection endpoint answers 404 and is
+ * unusable. Covers base-class features only — subclass features live behind a
+ * separate per-class subclasses call (see searchSubclasses).
  */
 export async function searchClassFeatures(
   client: DdbClient,
   params: ClassFeatureSearchParams
 ): Promise<ToolResult> {
-  const cacheKey = "game-data:class-features";
-  const features = await client.get<DdbClassFeature[]>(
-    ENDPOINTS.gameData.classFeatureCollection(),
+  const cacheKey = "game-data:classes";
+  const payload = await client.get<DdbClass[]>(
+    ENDPOINTS.gameData.classes(),
     cacheKey,
     86_400_000,
   );
 
-  let matched = features ?? [];
+  // Guard the shape rather than trusting it: feeding a non-array payload into
+  // an array method is what made the sibling racial-trait search throw.
+  const classes = Array.isArray(payload) ? payload : [];
+
+  const features: DdbClassFeature[] = classes.flatMap((cls) =>
+    (cls.classFeatures ?? []).flatMap((f) =>
+      f?.name
+        ? [{ ...f, className: cls.name, sourceIds: (cls.sources ?? []).map((s) => s.sourceId) }]
+        : []
+    )
+  );
+
+  let matched = features;
 
   if (params.name) {
     const searchName = params.name.toLowerCase();
@@ -1370,18 +1393,24 @@ export async function searchClassFeatures(
   matched = matched.slice(0, 30);
 
   if (matched.length === 0) {
-    return {
-      content: [{ type: "text", text: "No class features found matching the search criteria." }],
-    };
+    // Separate "your filter matched nothing" from "the catalogue came back
+    // empty" — the second is an upstream problem, not a search result.
+    const text = features.length === 0
+      ? "The classes catalogue returned no class features at all — the upstream data is unavailable, not merely unmatched."
+      : "No class features found matching the search criteria.";
+    return { content: [{ type: "text", text }] };
   }
 
   const lines = [`# Class Feature Search Results (${total > 30 ? `showing 30 of ${total}` : `${total} found`})\n`];
   for (const feature of matched) {
     const className = feature.className || "Unknown";
     const level = feature.requiredLevel || "?";
-    lines.push(`- **${feature.name}** — ${className} level ${level}`);
+    // The catalogue holds the 2014 and 2024 version of each class side by side,
+    // so identical feature names recur — sourceId is what tells them apart.
+    const src = (feature.sourceIds ?? []).join(",");
+    lines.push(`- **${feature.name}** — ${className} level ${level}${src ? ` (sourceId: ${src})` : ""}`);
 
-    const desc = stripHtml(feature.snippet || feature.description || "").substring(0, 100);
+    const desc = stripHtml(feature.summary || feature.description || "").substring(0, 100);
     if (desc) lines.push(`  ${desc}${desc.length >= 100 ? "..." : ""}`);
   }
 
