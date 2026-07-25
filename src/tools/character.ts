@@ -2545,7 +2545,20 @@ export async function updateCustomItem(
   if (!entry && params.itemName) {
     const names = inventory.map((i) => i.definition?.name).filter(Boolean) as string[];
     const search = params.itemName.toLowerCase();
+
     entry = inventory.find((i) => i.definition?.name?.toLowerCase() === search);
+
+    // Substring before Levenshtein: custom items routinely carry a parenthetical
+    // suffix ("Heiltrank (1W12+6)"), which puts the bare name far outside the
+    // edit-distance threshold even though it is the obvious match.
+    if (!entry) {
+      const contains = names.filter((n) => n.toLowerCase().includes(search));
+      if (contains.length > 1) {
+        return { content: [{ type: "text", text: `Item "${params.itemName}" is ambiguous. Did you mean: ${contains.join(", ")}?` }] };
+      }
+      entry = inventory.find((i) => i.definition?.name === contains[0]);
+    }
+
     if (!entry) {
       const matches = fuzzyMatch(params.itemName, names, 3);
       if (matches.length > 1) {

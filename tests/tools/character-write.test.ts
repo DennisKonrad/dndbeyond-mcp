@@ -261,6 +261,47 @@ describe("updateCustomItem", () => {
     expect(result.content[0].text).toContain("entry 555");
   });
 
+  it("resolves a bare name against a parenthetical suffix", async () => {
+    // "Heiltrank" vs "Heiltrank (1W4+2)" is edit-distance 8 — far outside the
+    // fuzzy threshold, so substring matching has to carry this case.
+    const mockClient = makeClient();
+
+    await updateCustomItem(mockClient, { characterId: 123, itemName: "Heiltrank", quantity: 1 });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 35677399 }),
+      ["character:123"]
+    );
+  });
+
+  it("reports ambiguity instead of guessing between substring matches", async () => {
+    const mockClient = makeClient([
+      CUSTOM_ENTRY,
+      { id: 556, quantity: 1, definition: { id: 2, name: "Heiltrank (groß)", isCustomItem: true } },
+    ]);
+
+    const result = await updateCustomItem(mockClient, { characterId: 123, itemName: "Heiltrank", quantity: 1 });
+
+    expect(mockClient.put).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("is ambiguous");
+    expect(result.content[0].text).toContain("Heiltrank (groß)");
+  });
+
+  it("still tolerates a typo via fuzzy matching", async () => {
+    const mockClient = makeClient([
+      { id: 558, quantity: 1, definition: { id: 3, name: "Bierkrug", isCustomItem: true } },
+    ]);
+
+    await updateCustomItem(mockClient, { characterId: 123, itemName: "Bierkug", quantity: 2 });
+
+    expect(mockClient.put).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: 3, quantity: 2 }),
+      ["character:123"]
+    );
+  });
+
   it("refuses to edit an item that is not custom", async () => {
     const mockClient = makeClient([
       { id: 777, quantity: 1, definition: { id: 12, name: "Greatsword", isCustomItem: false } },
