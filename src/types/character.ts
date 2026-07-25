@@ -169,10 +169,14 @@ export interface DdbTraits {
 }
 
 export interface DdbLimitedUse {
+  // Base charge count. When useProficiencyBonus is set, this is only the base —
+  // the real cap is maxUses + proficiency bonus (Stonecunning ships as maxUses 0).
   maxUses: number;
   numberUsed: number;
   resetType: number; // 1 = Long Rest, 2 = Short Rest
   resetTypeDescription: string;
+  useProficiencyBonus?: boolean;
+  proficiencyBonusOperator?: number; // 1 = add (the only value observed so far)
 }
 
 export interface DdbAction {

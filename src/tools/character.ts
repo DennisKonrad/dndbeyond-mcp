@@ -6,6 +6,7 @@ import { HttpError } from "../resilience/index.js";
 import type {
   DdbCharacter,
   DdbAction,
+  DdbLimitedUse,
   DdbModifier,
   DdbSpell,
   DdbFeat,
@@ -465,16 +466,25 @@ function formatSpellcasting(char: DdbCharacter): string {
   return dcStrings.join(" | ");
 }
 
+// Features whose charge count scales with proficiency bonus (Stonecunning, most
+// 2024 racial/feat actions) ship with maxUses as the BASE only and a
+// useProficiencyBonus flag. Reading maxUses raw reports Stonecunning as 0 uses,
+// which then renders as a negative remainder once any charge is spent.
+function effectiveMaxUses(lu: DdbLimitedUse, profBonus: number): number {
+  return lu.useProficiencyBonus ? lu.maxUses + profBonus : lu.maxUses;
+}
+
 function formatLimitedUseResources(char: DdbCharacter): string {
   const resources: string[] = [];
   const actions = char.actions ?? {};
+  const profBonus = calculateProficiencyBonus(computeLevel(char));
 
   for (const list of Object.values(actions)) {
     if (!Array.isArray(list)) continue;
     for (const action of list) {
       if (action.limitedUse) {
         const used = action.limitedUse.numberUsed;
-        const max = action.limitedUse.maxUses;
+        const max = effectiveMaxUses(action.limitedUse, profBonus);
         const remaining = max - used;
         const reset = action.limitedUse.resetTypeDescription || "unknown";
         resources.push(`  ${action.name}: ${remaining}/${max} (${reset})`);
@@ -2011,7 +2021,10 @@ export async function useAbility(
   }
 
   const currentUsed = foundAction.limitedUse.numberUsed;
-  const maxUses = foundAction.limitedUse.maxUses;
+  const maxUses = effectiveMaxUses(
+    foundAction.limitedUse,
+    calculateProficiencyBonus(computeLevel(character))
+  );
   const newUses = params.uses ?? currentUsed + 1;
 
   if (newUses < 0 || newUses > maxUses) {
