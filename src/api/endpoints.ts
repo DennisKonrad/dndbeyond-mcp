@@ -12,13 +12,18 @@ export const ENDPOINTS = {
     setInspiration: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/inspiration`,
     condition: () => `${DDB_CHARACTER_SERVICE}/character/v5/condition`,
     rest: {
-      // Short rest still uses the old query-string GET. Its POST contract could
-      // not be established: POST answers 500 for every body tried (2026-07-25).
-      short: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
-      // Long rest is a POST taking { characterId } in the BODY — probed against
-      // a foreign id: an empty body answers 400 "Invalid parameter: characterId",
-      // and { characterId } gets through to the ownership check. The query
-      // string is ignored, so it is gone.
+      // CAUTION: the GET forms of both rest routes are PREVIEW endpoints. They
+      // answer 200 { success: true, message: "Successfully received <x> rest
+      // text", data: "6 Hit Points, Up to 1 Hit Dice" } and change nothing —
+      // measured 2026-07-25 on a throwaway character. Calling them and
+      // reporting success is a silent no-op.
+      //
+      // Applying a rest is a POST with { characterId } in the body. Verified
+      // end to end for long rest. For short rest the body shape is still
+      // unknown: POST answers 500 for { characterId } alone and for every
+      // variant tried (hitDiceUsed, hitDice, spentHitDice, hitPointsToRestore,
+      // restType), so short rest has no working write path yet.
+      shortPreview: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
       long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
     // Deprecated v5 endpoints (return 404, kept for reference)

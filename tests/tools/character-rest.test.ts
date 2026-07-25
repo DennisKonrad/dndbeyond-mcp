@@ -52,20 +52,29 @@ describe("shortRest", () => {
     } as unknown as DdbClient;
   });
 
-  it("should call server-side short rest endpoint and invalidate cache", async () => {
+  it("should state plainly that the short rest was not applied", async () => {
+    // The route it can reach is preview-only; reporting success would repeat
+    // the exact bug that hid the long-rest failure.
     const result = await shortRest(mockClient, { characterId: 123 });
 
-    expect(result.content[0].text).toContain("Short rest completed for character 123");
-    expect(result.content[0].text).toContain("Pact magic and short-rest abilities have been restored");
+    expect(result.content[0].text).toContain("NOT applied to character 123");
+    expect(result.content[0].text).not.toContain("Short rest completed");
+    expect(mockClient.post).not.toHaveBeenCalled();
+  });
 
-    // Should call the server-side rest endpoint
-    expect(mockClient.get).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/rest/short?characterId=123"),
-      expect.any(String),
-      0
-    );
+  it("should surface the preview text when D&D Beyond returns one", async () => {
+    vi.mocked(mockClient.get).mockResolvedValue({ data: "Up to 1 Hit Dice" });
 
-    // Should invalidate character cache
-    expect(mockClient.invalidateCache).toHaveBeenCalledWith("character:123");
+    const result = await shortRest(mockClient, { characterId: 123 });
+
+    expect(result.content[0].text).toContain("would restore: Up to 1 Hit Dice");
+  });
+
+  it("should still report when the preview call fails", async () => {
+    vi.mocked(mockClient.get).mockRejectedValue(new Error("boom"));
+
+    const result = await shortRest(mockClient, { characterId: 123 });
+
+    expect(result.content[0].text).toContain("NOT applied to character 123");
   });
 });

@@ -1811,8 +1811,10 @@ export async function longRest(
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
   // Server-side long rest handles all resets atomically:
   // HP, spell slots, pact magic, limited-use abilities, hit dice, death saves.
-  // It is a POST with characterId in the BODY — the previous GET could not have
-  // worked, since the endpoint reads characterId from the body, not the query.
+  // Applying it is a POST with characterId in the body. The GET this used to
+  // call is a PREVIEW endpoint: it answers 200 success with the text of what a
+  // rest WOULD restore and changes nothing, so the tool reported a completed
+  // rest that never happened.
   await client.post<unknown>(
     ENDPOINTS.character.rest.long(),
     { characterId: params.characterId },
@@ -1833,19 +1835,30 @@ export async function shortRest(
   client: DdbClient,
   params: ShortRestParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  // Server-side short rest handles pact magic, short-rest abilities, hit dice
-  await client.get<unknown>(
-    ENDPOINTS.character.rest.short(params.characterId),
-    `rest:short:${params.characterId}:${Date.now()}`,
-    0
-  );
+  // There is no working write path for a short rest. The GET route is only a
+  // preview (200 success, no state change), and the POST that applies a long
+  // rest answers 500 for every short-rest body tried. Report what D&D Beyond
+  // says a short rest would restore, and be explicit that nothing was applied —
+  // claiming success here is exactly the bug that hid the long-rest failure.
+  let preview = "";
+  try {
+    const res = await client.get<{ data?: string } | string>(
+      ENDPOINTS.character.rest.shortPreview(params.characterId),
+      `rest:short-preview:${params.characterId}`,
+      0
+    );
+    preview = typeof res === "string" ? res : res?.data ?? "";
+  } catch {
+    // Preview text is a nicety; its absence must not mask the real message.
+  }
   client.invalidateCache(`character:${params.characterId}`);
 
+  const wouldRestore = preview ? `\n\nD&D Beyond reports a short rest would restore: ${preview}` : "";
   return {
     content: [
       {
         type: "text",
-        text: `Short rest completed for character ${params.characterId}. Pact magic and short-rest abilities have been restored.`,
+        text: `⚠️  Short rest was NOT applied to character ${params.characterId}.\n\nD&D Beyond exposes no working endpoint for applying a short rest — the documented route only returns preview text. Apply it on the site, or adjust the affected resources directly with use_ability / update_hp.${wouldRestore}`,
       },
     ],
   };
