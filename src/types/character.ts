@@ -26,6 +26,9 @@ export interface DdbCharacter {
   actions: Record<string, DdbAction[]>;
   modifiers: Record<string, DdbModifier[]>;
   campaign: { id: number; name: string } | null;
+  // D&D Beyond's "Manage Custom Proficiencies" entries. These live OUTSIDE
+  // modifiers, so anything scanning only modifiers silently misses them.
+  customProficiencies?: DdbCustomProficiency[];
   feats: DdbFeat[];
   notes: DdbNotes;
   dateModified?: string;
@@ -169,6 +172,13 @@ export interface DdbTraits {
   bonds: string | null;
   flaws: string | null;
   appearance: string | null;
+}
+
+export interface DdbCustomProficiency {
+  id: number;
+  name: string;
+  type: number; // 1 = skill, 2 = tool, 3 = language
+  proficiencyLevel: number; // 1 = half, 2 = proficient, 3 = expertise
 }
 
 export interface DdbLimitedUse {

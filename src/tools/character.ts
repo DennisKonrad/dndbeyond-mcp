@@ -6,6 +6,7 @@ import { HttpError } from "../resilience/index.js";
 import type {
   DdbCharacter,
   DdbAction,
+  DdbCustomProficiency,
   DdbLimitedUse,
   DdbModifier,
   DdbSpell,
@@ -337,13 +338,28 @@ function formatSavingThrows(char: DdbCharacter): string {
   return saves.join(" | ");
 }
 
+// Custom-proficiency type ids, as used by "Manage Custom Proficiencies".
+const CUSTOM_PROF_SKILL = 1;
+const CUSTOM_PROF_TOOL = 2;
+const CUSTOM_PROF_LANGUAGE = 3;
+
+function customProficienciesOfType(char: DdbCharacter, type: number): DdbCustomProficiency[] {
+  return (char.customProficiencies ?? []).filter((p) => p.type === type && p.name);
+}
+
 function formatSkills(char: DdbCharacter): string {
   const profBonus = calculateProficiencyBonus(computeLevel(char));
+  const customSkills = customProficienciesOfType(char, CUSTOM_PROF_SKILL);
 
   const lines = SKILL_DEFINITIONS.map((skill) => {
     const abilityMod = getAbilityModNumeric(char, skill.abilityId);
-    const proficient = hasModifierBySubType(char.modifiers, skill.subType, "proficiency");
-    const expertise = hasModifierBySubType(char.modifiers, skill.subType, "expertise");
+    // A skill granted through custom proficiencies has no modifier entry, so
+    // scanning modifiers alone understates the bonus.
+    const custom = customSkills.find((p) => p.name.toLowerCase() === skill.name.toLowerCase());
+    const proficient = hasModifierBySubType(char.modifiers, skill.subType, "proficiency")
+      || (custom != null && custom.proficiencyLevel >= 2);
+    const expertise = hasModifierBySubType(char.modifiers, skill.subType, "expertise")
+      || custom?.proficiencyLevel === 3;
 
     let total = abilityMod;
     let marker = "";
@@ -391,6 +407,14 @@ function formatProficiencies(char: DdbCharacter): string {
   for (const list of Object.values(char.modifiers)) {
     if (!Array.isArray(list)) continue;
     for (const mod of list) {
+      // Languages are their OWN modifier type, not proficiencies — skipping
+      // everything but "proficiency" hid every language on the sheet.
+      if (mod.type === "language") {
+        const langName = mod.friendlySubtypeName
+          || mod.subType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        languages.add(langName);
+        continue;
+      }
       if (mod.type !== "proficiency") continue;
       if (EXCLUDED_PROFICIENCY_SUBTYPES.has(mod.subType)) continue;
 
@@ -415,6 +439,11 @@ function formatProficiencies(char: DdbCharacter): string {
       }
     }
   }
+
+  // Custom proficiencies live outside modifiers entirely — a custom background's
+  // tool or a language like Undercommon appears only here.
+  for (const p of customProficienciesOfType(char, CUSTOM_PROF_TOOL)) tools.add(p.name);
+  for (const p of customProficienciesOfType(char, CUSTOM_PROF_LANGUAGE)) languages.add(p.name);
 
   const lines: string[] = [];
   if (armor.size > 0) lines.push(`Armor: ${[...armor].sort().join(", ")}`);

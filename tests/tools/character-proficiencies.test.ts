@@ -64,8 +64,13 @@ function createCharacterWithProficiencies(): DdbCharacter {
     modifiers: {
       race: [
         { id: "r1", type: "proficiency", subType: "battleaxes", value: null, friendlyTypeName: "Proficiency", friendlySubtypeName: "Battleaxes", componentId: 1, componentTypeId: 1 },
-        { id: "r2", type: "proficiency", subType: "common", value: null, friendlyTypeName: "Proficiency", friendlySubtypeName: "Common", componentId: 1, componentTypeId: 1 },
-        { id: "r3", type: "proficiency", subType: "dwarvish", value: null, friendlyTypeName: "Proficiency", friendlySubtypeName: "Dwarvish", componentId: 1, componentTypeId: 1 },
+        // Live shape: languages arrive as their own modifier type, NOT as
+        // proficiencies. The old fixture used "proficiency" for both, which is
+        // why the missing-languages bug tested green.
+        { id: "r2", type: "language", subType: "common", value: null, friendlyTypeName: "Language", friendlySubtypeName: "Common", componentId: 1, componentTypeId: 1 },
+        { id: "r3", type: "language", subType: "dwarvish", value: null, friendlyTypeName: "Language", friendlySubtypeName: "Dwarvish", componentId: 1, componentTypeId: 1 },
+        // Kept in the legacy proficiency shape so that path stays covered too.
+        { id: "r4", type: "proficiency", subType: "giant", value: null, friendlyTypeName: "Proficiency", friendlySubtypeName: "Giant", componentId: 1, componentTypeId: 1 },
       ],
       class: [
         { id: "c1", type: "proficiency", subType: "light-armor", value: null, friendlyTypeName: "Proficiency", friendlySubtypeName: "Light Armor", componentId: 2, componentTypeId: 2 },
@@ -102,6 +107,12 @@ function createCharacterWithProficiencies(): DdbCharacter {
     feats: [],
     notes: { personalPossessions: null, backstory: null, otherNotes: null, allies: null, organizations: null },
     campaign: { id: 999, name: "Test Campaign" },
+    // "Manage Custom Proficiencies" entries — stored outside modifiers.
+    customProficiencies: [
+      { id: 1, name: "Cartographer's Tools", type: 2, proficiencyLevel: 2 },
+      { id: 2, name: "Undercommon", type: 3, proficiencyLevel: 3 },
+      { id: 3, name: "Survival", type: 1, proficiencyLevel: 2 },
+    ],
   };
 }
 
@@ -141,5 +152,47 @@ describe("formatProficiencies in character sheet", () => {
 
     // Saving throws should NOT appear in proficiencies section (they have their own section)
     expect(profSection).not.toContain("Saving Throws");
+  });
+
+  it("should list languages that arrive as their own modifier type", async () => {
+    const client = createMockClient();
+    vi.mocked(client.get)
+      .mockResolvedValueOnce(mockUserCharacters)
+      .mockResolvedValueOnce(createCharacterWithProficiencies());
+
+    const result = await getCharacter(client, { characterName: "Thorin", detail: "sheet" });
+    const langLine = result.content[0].text.split("\n").find((l) => l.startsWith("Languages:")) ?? "";
+
+    expect(langLine).toContain("Common");
+    expect(langLine).toContain("Dwarvish");
+    expect(langLine).toContain("Giant"); // legacy proficiency-typed language
+  });
+
+  it("should include custom proficiencies, which live outside modifiers", async () => {
+    const client = createMockClient();
+    vi.mocked(client.get)
+      .mockResolvedValueOnce(mockUserCharacters)
+      .mockResolvedValueOnce(createCharacterWithProficiencies());
+
+    const text = (await getCharacter(client, { characterName: "Thorin", detail: "sheet" })).content[0].text;
+    const toolLine = text.split("\n").find((l) => l.startsWith("Tools:")) ?? "";
+    const langLine = text.split("\n").find((l) => l.startsWith("Languages:")) ?? "";
+
+    expect(toolLine).toContain("Cartographer's Tools");
+    expect(langLine).toContain("Undercommon");
+  });
+
+  it("should apply the proficiency bonus for a custom skill proficiency", async () => {
+    const client = createMockClient();
+    vi.mocked(client.get)
+      .mockResolvedValueOnce(mockUserCharacters)
+      .mockResolvedValueOnce(createCharacterWithProficiencies());
+
+    const text = (await getCharacter(client, { characterName: "Thorin", detail: "sheet" })).content[0].text;
+    const survival = text.split("\n").find((l) => l.trim().startsWith("Survival:")) ?? "";
+
+    // WIS 12 (+1) + proficiency bonus 3 at level 5 = +4, marked proficient.
+    expect(survival).toContain("+4");
+    expect(survival).toContain("*");
   });
 });
