@@ -1329,7 +1329,58 @@ interface DdbClassFeature {
   summary?: string;
   requiredLevel: number;
   className?: string;
+  subclassName?: string;
   sourceIds?: number[];
+}
+
+/**
+ * Collect the subclass-own features for one base class.
+ *
+ * The subclasses endpoint returns each subclass with the FULL feature list —
+ * its own features plus every base-class feature. Subtracting the base ids is
+ * what separates the two; featuresSectionType is null throughout and cannot.
+ */
+async function collectSubclassFeatures(
+  client: DdbClient,
+  cls: DdbClass,
+  campaignId?: number
+): Promise<DdbClassFeature[]> {
+  const baseIds = new Set((cls.classFeatures ?? []).map((f) => f.id));
+  const sourceIds = (cls.sources ?? []).map((s) => s.sourceId);
+
+  let subclasses: DdbSubclassWithFeatures[];
+  try {
+    subclasses = await client.get<DdbSubclassWithFeatures[]>(
+      ENDPOINTS.gameData.subclasses(cls.id, campaignId),
+      `game-data:subclasses:${cls.id}:${campaignId ?? ""}`,
+      86_400_000,
+    );
+  } catch {
+    // One unreachable base class must not sink the whole search.
+    return [];
+  }
+
+  if (!Array.isArray(subclasses)) return [];
+
+  return subclasses.flatMap((sub) =>
+    (sub.classFeatures ?? []).flatMap((f) =>
+      f?.name && !baseIds.has(f.id)
+        ? [{ ...f, className: cls.name, subclassName: sub.name, sourceIds }]
+        : []
+    )
+  );
+}
+
+interface DdbSubclassWithFeatures {
+  id: number;
+  name: string;
+  classFeatures?: Array<{
+    id: number;
+    name: string;
+    description: string;
+    requiredLevel: number;
+    summary?: string;
+  }>;
 }
 
 /**
@@ -1337,8 +1388,12 @@ interface DdbClassFeature {
  *
  * Sourced from the classes catalogue, which carries each class's features
  * inline. The dedicated class-feature/collection endpoint answers 404 and is
- * unusable. Covers base-class features only — subclass features live behind a
- * separate per-class subclasses call (see searchSubclasses).
+ * unusable.
+ *
+ * Subclass features need one extra request per base class. When className is
+ * given only the matching classes are fetched; otherwise all of them are, which
+ * is the only way a name-only search can reach subclass features. Results are
+ * cached for a day, so the wide sweep is paid once.
  */
 export async function searchClassFeatures(
   client: DdbClient,
@@ -1363,6 +1418,17 @@ export async function searchClassFeatures(
     )
   );
 
+  // Narrow the subclass sweep to the classes that can still match, so a
+  // className-scoped search costs one extra request instead of twenty-five.
+  const searchClass = params.className?.toLowerCase();
+  const relevant = searchClass
+    ? classes.filter((c) => c.name?.toLowerCase().includes(searchClass))
+    : classes;
+
+  for (const cls of relevant) {
+    features.push(...await collectSubclassFeatures(client, cls, params.campaignId));
+  }
+
   let matched = features;
 
   if (params.name) {
@@ -1370,8 +1436,7 @@ export async function searchClassFeatures(
     matched = matched.filter((f) => f.name.toLowerCase().includes(searchName));
   }
 
-  if (params.className) {
-    const searchClass = params.className.toLowerCase();
+  if (searchClass) {
     matched = matched.filter(
       (f) => f.className?.toLowerCase().includes(searchClass)
     );
@@ -1382,9 +1447,11 @@ export async function searchClassFeatures(
   }
 
   matched.sort((a, b) => {
-    // Sort by class name, then by level, then by feature name
+    // Sort by class, then base features before subclass ones, then by level
     const classComp = (a.className || "").localeCompare(b.className || "");
     if (classComp !== 0) return classComp;
+    const subComp = (a.subclassName || "").localeCompare(b.subclassName || "");
+    if (subComp !== 0) return subComp;
     if (a.requiredLevel !== b.requiredLevel) return a.requiredLevel - b.requiredLevel;
     return a.name.localeCompare(b.name);
   });
@@ -1405,10 +1472,11 @@ export async function searchClassFeatures(
   for (const feature of matched) {
     const className = feature.className || "Unknown";
     const level = feature.requiredLevel || "?";
+    const origin = feature.subclassName ? `${className} / ${feature.subclassName}` : className;
     // The catalogue holds the 2014 and 2024 version of each class side by side,
     // so identical feature names recur — sourceId is what tells them apart.
     const src = (feature.sourceIds ?? []).join(",");
-    lines.push(`- **${feature.name}** — ${className} level ${level}${src ? ` (sourceId: ${src})` : ""}`);
+    lines.push(`- **${feature.name}** — ${origin} level ${level}${src ? ` (sourceId: ${src})` : ""}`);
 
     const desc = stripHtml(feature.summary || feature.description || "").substring(0, 100);
     if (desc) lines.push(`  ${desc}${desc.length >= 100 ? "..." : ""}`);

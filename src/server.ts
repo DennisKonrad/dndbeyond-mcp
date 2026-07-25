@@ -1135,17 +1135,19 @@ export async function startServer(): Promise<void> {
   // Register reference tools - class features
   server.tool(
     "search_class_features",
-    "Search for class features by name, class, or level",
+    "Search for class features by name, class, or level. Includes subclass features; pass className to keep the search fast, and campaignId to reach non-SRD subclasses",
     {
       name: z.string().optional().describe("Feature name (partial match)"),
       className: z.string().optional().describe("Class name to filter by (e.g., 'Fighter', 'Wizard')"),
       level: z.coerce.number().optional().describe("Class level requirement"),
+      campaignId: z.coerce.number().optional().describe("Campaign id — required for subclasses whose source is only shared into that campaign (e.g. Path of the Wild Heart)"),
     },
     async (params) =>
       searchClassFeatures(client, {
         name: params.name,
         className: params.className,
         level: params.level,
+        campaignId: params.campaignId,
       })
   );
 

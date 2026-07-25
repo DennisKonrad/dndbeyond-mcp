@@ -42,6 +42,9 @@ export interface ClassFeatureSearchParams {
   name?: string;
   className?: string;
   level?: number;
+  // Non-SRD subclasses only appear when their source is owned or shared into a
+  // campaign — without this, subclass coverage is limited to SRD content.
+  campaignId?: number;
 }
 
 export interface RacialTraitSearchParams {
