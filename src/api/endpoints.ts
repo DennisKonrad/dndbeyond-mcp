@@ -78,6 +78,16 @@ export const ENDPOINTS = {
       setStartingType: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/starting-type`,
     },
     delete: () => `${DDB_CHARACTER_SERVICE}/character/v5/character`,
+    // Class spell list writes, taken from the character app's API table
+    // (postCharacterSpell / deleteCharacterSpell / putCharacterSpellPrepared).
+    // Body for all three: { characterId, characterClassId, spellId (definition
+    // id), id (spell-list mapping id), entityTypeId }; prepared also takes
+    // { prepared: boolean }. Verified live 2026-10-26.
+    spell: {
+      add: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell`,
+      remove: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell`,
+      prepared: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell/prepared`,
+    },
   },
   gameData: {
     items: (campaignId?: number) => {
@@ -94,8 +104,12 @@ export const ENDPOINTS = {
     },
     races: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/races`,
     backgrounds: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/backgrounds`,
-    alwaysKnownSpells: (classId: number, classLevel: number = 20) =>
-      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-known-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2`,
+    alwaysKnownSpells: (classId: number, classLevel: number = 20, campaignId?: number) =>
+      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-known-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2${campaignId ? `&campaignId=${campaignId}` : ""}`,
+    // Spells a class can ADD to its list at the given level (auth required).
+    // For knowsAllSpells classes (Cleric, Druid) this is only the cantrips.
+    classSpells: (classId: number, classLevel: number, campaignId?: number) =>
+      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2${campaignId ? `&campaignId=${campaignId}` : ""}`,
     alwaysPreparedSpells: (classId: number, classLevel: number = 20) =>
       `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-prepared-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2`,
     // Both /collection endpoints are dead ends, verified 2026-07-25:

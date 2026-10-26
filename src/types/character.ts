@@ -44,6 +44,9 @@ export interface DdbCharacter {
     available: number;
   }>;
   hitDiceUsed?: number;
+  // Spells each class has on its list (learned, or prepared from the full list).
+  // Feat- and race-granted spells live in `spells` instead.
+  classSpells?: Array<{ characterClassId: number; spells: DdbSpell[] }>;
 }
 
 export interface DdbRace {
@@ -57,7 +60,20 @@ export interface DdbClass {
   // Mapping id of this class on the character — the key the short-rest write
   // expects in classHitDiceUsed, not the class definition id.
   id: number;
-  definition: { id: number; name: string };
+  definition: {
+    id: number;
+    name: string;
+    canCastSpells?: boolean;
+    // true: the whole class list is available and spells are only PREPARED
+    // (Cleric, Druid). false: spells must be ADDED to the list first (Bard,
+    // Paladin, Warlock, Wizard).
+    knowsAllSpells?: boolean;
+    spellPrepareType?: number | null;
+    spellRules?: {
+      levelCantripsKnownMaxes?: number[];
+      levelSpellKnownMaxes?: number[];
+    } | null;
+  };
   subclassDefinition: { name: string; classFeatures: DdbClassFeature[] } | null;
   level: number;
   isStartingClass: boolean;
@@ -130,6 +146,11 @@ export interface DdbSpell {
   prepared: boolean;
   alwaysPrepared: boolean;
   usesSpellSlot: boolean;
+  // Spell-list mapping fields. The spell write endpoints key a spell by
+  // definition id + this mapping id + entityTypeId.
+  entityTypeId?: number;
+  definitionId?: number;
+  countsAsKnownSpell?: boolean;
   // Optional fields present in the live character-service payload, used to
   // annotate a spell's granting source and its casting mode.
   componentId?: number;

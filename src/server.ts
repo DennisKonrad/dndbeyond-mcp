@@ -43,6 +43,7 @@ import {
   addInventoryItems,
   removeInventoryItem,
   setItemEquipped,
+  manageSpells,
   setGold,
   setMaxHp,
   setXp,
@@ -903,6 +904,24 @@ export async function startServer(): Promise<void> {
         characterId: params.characterId,
         inventoryItemId: params.inventoryItemId,
         equipped: params.equipped,
+      })
+  );
+
+  server.tool(
+    "manage_spells",
+    "Learn, prepare, unprepare or remove class spells by name (English D&D Beyond names, case-insensitive). 'learn' makes a spell castable: Clerics and Druids prepare it from their full class list; Bards, Paladins, Warlocks and other list-based casters add it to their list (Wizards add, then prepare). 'forget' reverses that. Spells always prepared by a feature are left alone. Reports per-spell results and the new cantrip/spell count against the class maximum.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+      learn: z.array(z.string()).optional().describe("Spell names to learn or prepare, e.g. ['Bless', 'Spirit Guardians']"),
+      forget: z.array(z.string()).optional().describe("Spell names to unprepare or remove"),
+      classMappingId: z.coerce.number().optional().describe("Class mapping id (classes[].id) — only needed for multiclass characters"),
+    },
+    async (params) =>
+      manageSpells(client, {
+        characterId: params.characterId,
+        learn: params.learn,
+        forget: params.forget,
+        classMappingId: params.classMappingId,
       })
   );
 
