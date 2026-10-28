@@ -11,6 +11,7 @@ import type {
   DdbModifier,
   DdbSpell,
   DdbFeat,
+  DdbClass,
   DdbClassFeature,
   DdbRacialTrait,
   DdbInventoryItem,
@@ -136,12 +137,35 @@ function formatSpellMode(spell: DdbSpell): string {
   return parts.join(" · ");
 }
 
-function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; category: string }> {
-  const out: Array<{ spell: DdbSpell; category: string }> = [];
-  const add = (arr: DdbSpell[] | null | undefined, category: string) => {
-    for (const s of arr ?? []) out.push({ spell: s, category });
+// A class-list spell is castable when it is a cantrip, prepared, always prepared,
+// or the class casts straight from its list. Classes that know their whole list
+// (Cleric, Druid) or prepare after adding (Wizard, spellPrepareType 1) need the
+// prepared flag; Bards, Paladins, Warlocks and the like never set it.
+function isCastableClassSpell(spell: DdbSpell, def?: DdbClass["definition"]): boolean {
+  if (spell.definition.level === 0 || spell.prepared || spell.alwaysPrepared) return true;
+  if (!def) return false;
+  return def.knowsAllSpells !== true && def.spellPrepareType !== 1;
+}
+
+function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; category: string; castable?: boolean }> {
+  const out: Array<{ spell: DdbSpell; category: string; castable?: boolean }> = [];
+  const add = (arr: DdbSpell[] | null | undefined, category: string, castable?: boolean) => {
+    for (const s of arr ?? []) out.push({ spell: s, category, castable });
   };
-  add(char.spells.class, "class");
+  // Spells a class feature grants (Magical Discoveries, Faithful Steed) are on the
+  // sheet even when D&D Beyond leaves both prepared flags false.
+  add(char.spells.class, "class", true);
+  // The class's own list (learned, or prepared from the full list). Only spells
+  // the character can actually cast are listed; see isCastableClassSpell.
+  const granted = new Set((char.spells.class ?? []).map((s) => s.definition.name));
+  for (const cs of char.classSpells ?? []) {
+    const cls = char.classes.find((c) => c.id === cs.characterClassId);
+    for (const s of cs.spells ?? []) {
+      // Already listed with its feature as source (e.g. Find Steed from Faithful Steed).
+      if (granted.has(s.definition.name)) continue;
+      if (isCastableClassSpell(s, cls?.definition)) out.push({ spell: s, category: cls?.definition.name ?? "class", castable: true });
+    }
+  }
   add(char.spells.race, "species");
   add(char.spells.background, "background");
   add(char.spells.item, "item");
@@ -151,7 +175,7 @@ function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; ca
 
 function formatSpells(char: DdbCharacter): string {
   const prepared = getAllSpellsWithSource(char).filter(
-    ({ spell }) => spell.prepared || spell.alwaysPrepared
+    ({ spell, castable }) => castable || spell.prepared || spell.alwaysPrepared
   );
   if (prepared.length === 0) return StringUtils.EMPTY;
 
@@ -208,6 +232,7 @@ function getAllSpells(char: DdbCharacter): DdbSpell[] {
     ...(char.spells.background ?? []),
     ...(char.spells.item ?? []),
     ...(char.spells.feat ?? []),
+    ...(char.classSpells ?? []).flatMap((cs) => cs.spells ?? []),
   ];
 }
 
@@ -499,8 +524,12 @@ function formatSpellcasting(char: DdbCharacter): string {
 // 2024 racial/feat actions) ship with maxUses as the BASE only and a
 // useProficiencyBonus flag. Reading maxUses raw reports Stonecunning as 0 uses,
 // which then renders as a negative remainder once any charge is spent.
-function effectiveMaxUses(lu: DdbLimitedUse, profBonus: number): number {
-  return lu.useProficiencyBonus ? lu.maxUses + profBonus : lu.maxUses;
+// Features that scale with an ability (Bardic Inspiration = CHA mod) carry
+// statModifierUsesId and maxUses 0; their real cap is that modifier, minimum 1.
+function effectiveMaxUses(lu: DdbLimitedUse, profBonus: number, char?: DdbCharacter): number {
+  let max = lu.useProficiencyBonus ? lu.maxUses + profBonus : lu.maxUses;
+  if (lu.statModifierUsesId && char) max = Math.max(1, max + getAbilityModNumeric(char, lu.statModifierUsesId));
+  return max;
 }
 
 function formatLimitedUseResources(char: DdbCharacter): string {
@@ -513,9 +542,10 @@ function formatLimitedUseResources(char: DdbCharacter): string {
     for (const action of list) {
       if (action.limitedUse) {
         const used = action.limitedUse.numberUsed;
-        const max = effectiveMaxUses(action.limitedUse, profBonus);
+        const max = effectiveMaxUses(action.limitedUse, profBonus, char);
         const remaining = max - used;
-        const reset = action.limitedUse.resetTypeDescription || "unknown";
+        const reset = action.limitedUse.resetTypeDescription
+          || LIMITED_USE_RESET[action.limitedUse.resetType] || "unknown";
         resources.push(`  ${action.name}: ${remaining}/${max} (${reset})`);
       }
     }
@@ -963,8 +993,9 @@ function formatCharacterFull(char: DdbCharacter): string {
   const definitionSections: string[] = [];
 
   // Spells
-  const allSpells = getAllSpells(char);
-  const preparedSpells = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
+  const preparedSpells = getAllSpellsWithSource(char)
+    .filter(({ spell, castable }) => castable || spell.prepared || spell.alwaysPrepared)
+    .map(({ spell }) => spell);
   if (preparedSpells.length > 0) {
     const spellDefs = preparedSpells
       .sort((a, b) => a.definition.level - b.definition.level || a.definition.name.localeCompare(b.definition.name))
@@ -2086,7 +2117,8 @@ export async function useAbility(
   const currentUsed = foundAction.limitedUse.numberUsed;
   const maxUses = effectiveMaxUses(
     foundAction.limitedUse,
-    calculateProficiencyBonus(computeLevel(character))
+    calculateProficiencyBonus(computeLevel(character)),
+    character
   );
   const newUses = params.uses ?? currentUsed + 1;
 

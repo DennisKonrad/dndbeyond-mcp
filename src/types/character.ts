@@ -217,6 +217,8 @@ export interface DdbLimitedUse {
   resetTypeDescription: string;
   useProficiencyBonus?: boolean;
   proficiencyBonusOperator?: number; // 1 = add (the only value observed so far)
+  // Ability id (1=STR..6=CHA) whose modifier sets the cap, e.g. Bardic Inspiration = 6.
+  statModifierUsesId?: number | null;
 }
 
 export interface DdbAction {
