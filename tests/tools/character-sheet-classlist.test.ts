@@ -81,6 +81,22 @@ describe("sheet: feature-granted class spells", () => {
   });
 });
 
+describe("sheet: duplicates between feature and list", () => {
+  it("keeps the prepared list copy when the feature only allows a once-a-day cast", async () => {
+    const c = character("Cleric", { knowsAllSpells: true, spellPrepareType: 1 }, [spell("Spirit Guardians", 3, { prepared: true })]);
+    c.spells.class = [spell("Spirit Guardians", 3, { usesSpellSlot: false, limitedUse: { maxUses: 1, numberUsed: 0, resetType: 2 } } as Partial<DdbSpell>)];
+    const text = await sheet(c);
+    expect(text.match(/Spirit Guardians/g)?.length).toBe(2);
+  });
+
+  it("drops the list copy when a feature already grants the spell with slots", async () => {
+    const c = character("Paladin", { knowsAllSpells: false }, [spell("Find Steed", 2)]);
+    c.spells.class = [spell("Find Steed", 2, { usesSpellSlot: true })];
+    const text = await sheet(c);
+    expect(text.match(/Find Steed/g)?.length).toBe(1);
+  });
+});
+
 describe("sheet: ability-based resource caps", () => {
   it("derives Bardic Inspiration uses from CHA and names the reset", async () => {
     const actions = { class: [{ name: "Bardic Inspiration", limitedUse: { maxUses: 0, numberUsed: 1, resetType: 1, statModifierUsesId: 6 } }] };

@@ -157,7 +157,12 @@ function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; ca
   add(char.spells.class, "class", true);
   // The class's own list (learned, or prepared from the full list). Only spells
   // the character can actually cast are listed; see isCastableClassSpell.
-  const granted = new Set((char.spells.class ?? []).map((s) => s.definition.name));
+  // Names a feature already makes castable with spell slots (Find Steed from
+  // Faithful Steed). A once-a-day feature cast (Divine Intervention) does not
+  // count, so the prepared copy on the list still shows.
+  const granted = new Set((char.spells.class ?? [])
+    .filter((s) => s.usesSpellSlot === true && !s.limitedUse)
+    .map((s) => s.definition.name));
   for (const cs of char.classSpells ?? []) {
     const cls = char.classes.find((c) => c.id === cs.characterClassId);
     for (const s of cs.spells ?? []) {
