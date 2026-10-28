@@ -11,6 +11,7 @@ import type {
   DdbModifier,
   DdbSpell,
   DdbFeat,
+  DdbClass,
   DdbClassFeature,
   DdbRacialTrait,
   DdbInventoryItem,
@@ -136,12 +137,40 @@ function formatSpellMode(spell: DdbSpell): string {
   return parts.join(" · ");
 }
 
-function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; category: string }> {
-  const out: Array<{ spell: DdbSpell; category: string }> = [];
-  const add = (arr: DdbSpell[] | null | undefined, category: string) => {
-    for (const s of arr ?? []) out.push({ spell: s, category });
+// A class-list spell is castable when it is a cantrip, prepared, always prepared,
+// or the class casts straight from its list. Classes that know their whole list
+// (Cleric, Druid) or prepare after adding (Wizard, spellPrepareType 1) need the
+// prepared flag; Bards, Paladins, Warlocks and the like never set it.
+function isCastableClassSpell(spell: DdbSpell, def?: DdbClass["definition"]): boolean {
+  if (spell.definition.level === 0 || spell.prepared || spell.alwaysPrepared) return true;
+  if (!def) return false;
+  return def.knowsAllSpells !== true && def.spellPrepareType !== 1;
+}
+
+function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; category: string; castable?: boolean }> {
+  const out: Array<{ spell: DdbSpell; category: string; castable?: boolean }> = [];
+  const add = (arr: DdbSpell[] | null | undefined, category: string, castable?: boolean) => {
+    for (const s of arr ?? []) out.push({ spell: s, category, castable });
   };
-  add(char.spells.class, "class");
+  // Spells a class feature grants (Magical Discoveries, Faithful Steed) are on the
+  // sheet even when D&D Beyond leaves both prepared flags false.
+  add(char.spells.class, "class", true);
+  // The class's own list (learned, or prepared from the full list). Only spells
+  // the character can actually cast are listed; see isCastableClassSpell.
+  // Names a feature already makes castable with spell slots (Find Steed from
+  // Faithful Steed). A once-a-day feature cast (Divine Intervention) does not
+  // count, so the prepared copy on the list still shows.
+  const granted = new Set((char.spells.class ?? [])
+    .filter((s) => s.usesSpellSlot === true && !s.limitedUse)
+    .map((s) => s.definition.name));
+  for (const cs of char.classSpells ?? []) {
+    const cls = char.classes.find((c) => c.id === cs.characterClassId);
+    for (const s of cs.spells ?? []) {
+      // Already listed with its feature as source (e.g. Find Steed from Faithful Steed).
+      if (granted.has(s.definition.name)) continue;
+      if (isCastableClassSpell(s, cls?.definition)) out.push({ spell: s, category: cls?.definition.name ?? "class", castable: true });
+    }
+  }
   add(char.spells.race, "species");
   add(char.spells.background, "background");
   add(char.spells.item, "item");
@@ -151,7 +180,7 @@ function getAllSpellsWithSource(char: DdbCharacter): Array<{ spell: DdbSpell; ca
 
 function formatSpells(char: DdbCharacter): string {
   const prepared = getAllSpellsWithSource(char).filter(
-    ({ spell }) => spell.prepared || spell.alwaysPrepared
+    ({ spell, castable }) => castable || spell.prepared || spell.alwaysPrepared
   );
   if (prepared.length === 0) return StringUtils.EMPTY;
 
@@ -208,6 +237,7 @@ function getAllSpells(char: DdbCharacter): DdbSpell[] {
     ...(char.spells.background ?? []),
     ...(char.spells.item ?? []),
     ...(char.spells.feat ?? []),
+    ...(char.classSpells ?? []).flatMap((cs) => cs.spells ?? []),
   ];
 }
 
@@ -499,8 +529,12 @@ function formatSpellcasting(char: DdbCharacter): string {
 // 2024 racial/feat actions) ship with maxUses as the BASE only and a
 // useProficiencyBonus flag. Reading maxUses raw reports Stonecunning as 0 uses,
 // which then renders as a negative remainder once any charge is spent.
-function effectiveMaxUses(lu: DdbLimitedUse, profBonus: number): number {
-  return lu.useProficiencyBonus ? lu.maxUses + profBonus : lu.maxUses;
+// Features that scale with an ability (Bardic Inspiration = CHA mod) carry
+// statModifierUsesId and maxUses 0; their real cap is that modifier, minimum 1.
+function effectiveMaxUses(lu: DdbLimitedUse, profBonus: number, char?: DdbCharacter): number {
+  let max = lu.useProficiencyBonus ? lu.maxUses + profBonus : lu.maxUses;
+  if (lu.statModifierUsesId && char) max = Math.max(1, max + getAbilityModNumeric(char, lu.statModifierUsesId));
+  return max;
 }
 
 function formatLimitedUseResources(char: DdbCharacter): string {
@@ -513,9 +547,10 @@ function formatLimitedUseResources(char: DdbCharacter): string {
     for (const action of list) {
       if (action.limitedUse) {
         const used = action.limitedUse.numberUsed;
-        const max = effectiveMaxUses(action.limitedUse, profBonus);
+        const max = effectiveMaxUses(action.limitedUse, profBonus, char);
         const remaining = max - used;
-        const reset = action.limitedUse.resetTypeDescription || "unknown";
+        const reset = action.limitedUse.resetTypeDescription
+          || LIMITED_USE_RESET[action.limitedUse.resetType] || "unknown";
         resources.push(`  ${action.name}: ${remaining}/${max} (${reset})`);
       }
     }
@@ -963,8 +998,9 @@ function formatCharacterFull(char: DdbCharacter): string {
   const definitionSections: string[] = [];
 
   // Spells
-  const allSpells = getAllSpells(char);
-  const preparedSpells = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
+  const preparedSpells = getAllSpellsWithSource(char)
+    .filter(({ spell, castable }) => castable || spell.prepared || spell.alwaysPrepared)
+    .map(({ spell }) => spell);
   if (preparedSpells.length > 0) {
     const spellDefs = preparedSpells
       .sort((a, b) => a.definition.level - b.definition.level || a.definition.name.localeCompare(b.definition.name))
@@ -2086,7 +2122,8 @@ export async function useAbility(
   const currentUsed = foundAction.limitedUse.numberUsed;
   const maxUses = effectiveMaxUses(
     foundAction.limitedUse,
-    calculateProficiencyBonus(computeLevel(character))
+    calculateProficiencyBonus(computeLevel(character)),
+    character
   );
   const newUses = params.uses ?? currentUsed + 1;
 
@@ -2510,6 +2547,195 @@ export async function setItemEquipped(
     [`character:${params.characterId}`]
   );
   return { content: [{ type: "text", text: `${equipped ? "Equipped" : "Unequipped"} inventory item ${params.inventoryItemId} on character ${params.characterId}.` }] };
+}
+
+// entityTypeId of a class spell-list entry; used when a payload omits it.
+const SPELL_ENTITY_TYPE_ID = 435869154;
+
+interface ManageSpellsParams {
+  characterId: number;
+  learn?: string[];
+  forget?: string[];
+  classMappingId?: number;
+}
+
+function normalizeSpellName(name: string): string {
+  return name.trim().toLowerCase().replace(/[’`]/g, "'");
+}
+
+function findSpellByName(list: DdbSpell[], name: string): DdbSpell | undefined {
+  const wanted = normalizeSpellName(name);
+  return list.find((s) => normalizeSpellName(s.definition.name) === wanted);
+}
+
+function suggestSpellNames(lists: DdbSpell[][], name: string): string {
+  const wanted = normalizeSpellName(name);
+  const names = [...new Set(lists.flat().map((s) => s.definition.name))];
+  const close = names
+    .map((n) => ({ n, d: levenshteinDistance(normalizeSpellName(n), wanted) }))
+    .filter((x) => x.d <= 3)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 3)
+    .map((x) => x.n);
+  return close.length ? ` Did you mean: ${close.join(", ")}?` : "";
+}
+
+/**
+ * Learn, prepare, unprepare or remove class spells by name.
+ *
+ * D&D Beyond handles this two ways, chosen by the class definition:
+ * - knowsAllSpells (Cleric, Druid): the full class list is available, so a
+ *   levelled spell is PREPARED (PUT spell/prepared). Cantrips are still added.
+ * - otherwise (Bard, Paladin, Warlock, Wizard...): the spell is ADDED to the
+ *   class list (POST spell). Classes that also prepare from that list
+ *   (spellPrepareType 1, e.g. Wizard) get prepared right after adding.
+ * Forgetting reverses it: unprepare for knowsAllSpells classes, remove otherwise.
+ */
+export async function manageSpells(
+  client: DdbClient,
+  params: ManageSpellsParams
+): Promise<ToolResult> {
+  const learn = params.learn ?? [];
+  const forget = params.forget ?? [];
+  if (learn.length === 0 && forget.length === 0) {
+    return { content: [{ type: "text", text: "Nothing to do: pass spell names in learn and/or forget." }] };
+  }
+
+  const cacheKey = `character:${params.characterId}`;
+  client.invalidateCache(cacheKey);
+  const character = await client.get<DdbCharacter>(ENDPOINTS.character.get(params.characterId), cacheKey, 60_000);
+
+  const casters = character.classes.filter((c) => c.definition.canCastSpells !== false);
+  const cls = params.classMappingId != null
+    ? character.classes.find((c) => c.id === params.classMappingId)
+    : casters.length === 1 ? casters[0] : undefined;
+  if (!cls) {
+    const options = character.classes.map((c) => `${c.definition.name} = ${c.id}`).join(", ");
+    return { content: [{ type: "text", text: `Choose the class with classMappingId: ${options}` }] };
+  }
+
+  const def = cls.definition;
+  const preparesFromFullList = def.knowsAllSpells === true;
+  const preparesAfterAdding = !preparesFromFullList && def.spellPrepareType === 1;
+  const campaignId = character.campaign?.id;
+  const owned: DdbSpell[] = [
+    ...(character.classSpells?.find((cs) => cs.characterClassId === cls.id)?.spells ?? []),
+  ];
+
+  let learnable: DdbSpell[] | undefined;
+  const getLearnable = async () =>
+    (learnable ??= await client.get<DdbSpell[]>(
+      ENDPOINTS.gameData.classSpells(def.id, cls.level, campaignId),
+      `gamedata:classSpells:${def.id}:${cls.level}:${campaignId ?? 0}`,
+      3_600_000
+    ));
+  let fullList: DdbSpell[] | undefined;
+  const getFullList = async () =>
+    (fullList ??= await client.get<DdbSpell[]>(
+      ENDPOINTS.gameData.alwaysKnownSpells(def.id, cls.level, campaignId),
+      `gamedata:alwaysKnown:${def.id}:${cls.level}:${campaignId ?? 0}`,
+      3_600_000
+    ));
+
+  const ref = (s: DdbSpell) => ({
+    characterId: params.characterId,
+    characterClassId: cls.id,
+    spellId: s.definition.id ?? s.definitionId,
+    id: s.id,
+    entityTypeId: s.entityTypeId ?? SPELL_ENTITY_TYPE_ID,
+  });
+  const setPrepared = (s: DdbSpell, prepared: boolean) =>
+    client.put(ENDPOINTS.character.spell.prepared(), { ...ref(s), prepared }, [cacheKey]);
+
+  const lines: string[] = [];
+
+  for (const name of learn) {
+    try {
+      const own = findSpellByName(owned, name);
+      if (own) {
+        const needsPrepare = (preparesFromFullList || preparesAfterAdding)
+          && own.definition.level > 0 && !own.prepared && !own.alwaysPrepared;
+        if (needsPrepare) {
+          await setPrepared(own, true);
+          own.prepared = true;
+          lines.push(`+ ${own.definition.name}: prepared`);
+        } else {
+          lines.push(`= ${own.definition.name}: already on the sheet`);
+        }
+        continue;
+      }
+
+      if (preparesFromFullList) {
+        const fromList = findSpellByName(await getFullList(), name);
+        if (fromList && fromList.definition.level > 0) {
+          await setPrepared(fromList, true);
+          owned.push({ ...fromList, prepared: true });
+          lines.push(`+ ${fromList.definition.name}: prepared`);
+          continue;
+        }
+      }
+
+      const toAdd = findSpellByName(await getLearnable(), name);
+      if (toAdd) {
+        await client.post(ENDPOINTS.character.spell.add(), ref(toAdd), [cacheKey]);
+        const added = { ...toAdd, prepared: false };
+        owned.push(added);
+        if (preparesAfterAdding && toAdd.definition.level > 0) {
+          await setPrepared(added, true);
+          added.prepared = true;
+          lines.push(`+ ${toAdd.definition.name}: added and prepared`);
+        } else {
+          lines.push(`+ ${toAdd.definition.name}: added`);
+        }
+        continue;
+      }
+
+      const lists = [owned, learnable ?? [], fullList ?? []];
+      lines.push(`x ${name}: not on the ${def.name} list for level ${cls.level}.${suggestSpellNames(lists, name)}`);
+    } catch (err) {
+      lines.push(`x ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  for (const name of forget) {
+    try {
+      const own = findSpellByName(owned, name);
+      if (!own) {
+        lines.push(`= ${name}: not on the sheet`);
+        continue;
+      }
+      if (own.alwaysPrepared) {
+        lines.push(`x ${own.definition.name}: always prepared by a feature, cannot be removed`);
+        continue;
+      }
+      if (preparesFromFullList && own.definition.level > 0) {
+        await setPrepared(own, false);
+        own.prepared = false;
+        owned.splice(owned.indexOf(own), 1);
+        lines.push(`- ${own.definition.name}: unprepared`);
+      } else {
+        await client.delete(ENDPOINTS.character.spell.remove(), ref(own), [cacheKey]);
+        owned.splice(owned.indexOf(own), 1);
+        lines.push(`- ${own.definition.name}: removed`);
+      }
+    } catch (err) {
+      lines.push(`x ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const counted = owned.filter((s) => !s.alwaysPrepared);
+  const cantrips = counted.filter((s) => s.definition.level === 0).length;
+  const spells = counted.filter((s) => s.definition.level > 0 && (!preparesFromFullList || s.prepared)).length;
+  const cantripMax = def.spellRules?.levelCantripsKnownMaxes?.[cls.level];
+  const spellMax = def.spellRules?.levelSpellKnownMaxes?.[cls.level];
+  const label = preparesFromFullList ? "prepared" : "known";
+  lines.push(
+    `${character.name} (${def.name} ${cls.level}): ${cantrips}${cantripMax ? `/${cantripMax}` : ""} cantrips, ` +
+    `${spells}${spellMax ? `/${spellMax}` : ""} ${label} spells (always-prepared spells not counted).`
+  );
+
+  client.invalidateCache(cacheKey);
+  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 const CUSTOM_PROFICIENCY_TYPES: Record<number, string> = { 1: "skill", 2: "tool", 3: "language" };
