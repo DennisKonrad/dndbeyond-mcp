@@ -1653,6 +1653,11 @@ interface UpdateSpellSlotsParams {
   used: number;
 }
 
+/** Body for PUT /spell/slots: the sheet sends one key per level, e.g. { level3: 2 }. */
+export function spellSlotsBody(characterId: number, level: number, used: number) {
+  return { characterId, [`level${level}`]: used };
+}
+
 export async function updateSpellSlots(
   client: DdbClient,
   params: UpdateSpellSlotsParams
@@ -1681,8 +1686,8 @@ export async function updateSpellSlots(
 
   try {
     await client.put(
-      ENDPOINTS.character.updateSpellSlots(params.characterId),
-      { level: params.level, used: params.used },
+      ENDPOINTS.character.updateSpellSlots(),
+      spellSlotsBody(params.characterId, params.level, params.used),
       [`character:${params.characterId}`]
     );
 
@@ -2120,8 +2125,8 @@ export async function castSpell(
         };
       }
       await client.put(
-        ENDPOINTS.character.updateSpellSlots(params.characterId),
-        { level: spellLevel, used: newUsed },
+        ENDPOINTS.character.updateSpellSlots(),
+        spellSlotsBody(params.characterId, spellLevel, newUsed),
         [`character:${params.characterId}`]
       );
       return {
@@ -2134,8 +2139,8 @@ export async function castSpell(
 
     // No slot data available — just update the slot count
     await client.put(
-      ENDPOINTS.character.updateSpellSlots(params.characterId),
-      { level: spellLevel, used: 1 },
+      ENDPOINTS.character.updateSpellSlots(),
+      spellSlotsBody(params.characterId, spellLevel, 1),
       [`character:${params.characterId}`]
     );
     return {
