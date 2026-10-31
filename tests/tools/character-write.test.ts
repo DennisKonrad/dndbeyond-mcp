@@ -370,8 +370,8 @@ describe("updateSpellSlots", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/spell/slots"),
-      { level: 3, used: 2 },
+      expect.stringMatching(/\/character\/v5\/spell\/slots$/),
+      { characterId: 123, level3: 2 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Updated level 3 spell slots to 2 used");

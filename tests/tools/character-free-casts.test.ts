@@ -102,7 +102,7 @@ describe("castSpell with a spell slot", () => {
     const res = await castSpell(c, { characterId: 172822122, spellName: "Find Steed" });
     expect(c.put).toHaveBeenCalledWith(
       expect.stringContaining("/spell/slots"),
-      { level: 2, used: 1 },
+      { characterId: 172822122, level2: 1 },
       ["character:172822122"],
     );
     expect(res.content[0].text).toContain("Level 2 slots: 1/3 used");

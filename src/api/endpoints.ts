@@ -9,6 +9,11 @@ export const ENDPOINTS = {
     // New-style gameplay endpoints (characterId in body/query, not path)
     updateHp: () => `${DDB_CHARACTER_SERVICE}/character/v5/life/hp/damage-taken`,
     updateLimitedUse: () => `${DDB_CHARACTER_SERVICE}/character/v5/action/limited-use`,
+    // Spell slots: PUT { characterId, level<N>: used } — key per level, captured
+    // from the sheet bundle (putCharacterSpellSlots / getSpellLevelSpellSlotRequestsDataKey).
+    // The old path /character/{id}/spell/slots answers 404; a { level, used } body
+    // on this path answers 200 and changes nothing. Measured 2026-10-31.
+    updateSpellSlots: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell/slots`,
     setInspiration: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/inspiration`,
     condition: () => `${DDB_CHARACTER_SERVICE}/character/v5/condition`,
     rest: {
@@ -28,7 +33,6 @@ export const ENDPOINTS = {
       long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
     // Deprecated v5 endpoints (return 404, kept for reference)
-    updateSpellSlots: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/spell/slots`,
     updateDeathSaves: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/life/death-saves`,
     updateCurrency: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/inventory/currency`,
     updatePactMagic: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/spell/pact-magic`,
