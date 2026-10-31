@@ -21,6 +21,7 @@ import {
   longRest,
   shortRest,
   castSpell,
+  getCharacterState,
   useAbility,
   createCharacter,
   deleteCharacter,
@@ -611,6 +612,15 @@ export async function startServer(): Promise<void> {
         level: params.level,
         free: params.free,
       })
+  );
+
+  server.tool(
+    "get_character_state",
+    "Live play state as JSON for trackers and overlays: HP, spell slots (with real caps), pact magic, limited-use resources, free spell casts, inventory, currency, inspiration, death saves, conditions. Always bypasses the cache.",
+    {
+      characterId: z.coerce.number().describe("The character ID"),
+    },
+    async (params) => getCharacterState(client, { characterId: params.characterId })
   );
 
   // Register character creation/builder tools
