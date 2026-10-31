@@ -129,12 +129,80 @@ function formatSpellMode(spell: DdbSpell): string {
   if (lu && lu.maxUses != null) {
     const reset = lu.resetType != null ? (LIMITED_USE_RESET[lu.resetType] ?? `reset ${lu.resetType}`) : "limited";
     parts.push(`${lu.maxUses}/${reset}`);
+    if (lu.numberUsed) parts.push(`${lu.numberUsed} used`);
   }
   if (spell.usesSpellSlot === false) parts.push("no slot");
   else if (spell.usesSpellSlot === true) parts.push("spell slot");
   const abil = spell.spellCastingAbilityId;
   if (abil && SPELL_ABILITY_ABBR[abil]) parts.push(SPELL_ABILITY_ABBR[abil]);
   return parts.join(" · ");
+}
+
+// D&D Beyond leaves spellSlots[].available at 0 and computes the cap in the browser
+// from the class tables, so a Paladin 15 reads 0/0 at every level. Fall back to the
+// class's own slot table, or to the multiclass table for several casting classes.
+// Warlock pact slots are separate (pactMagic) and never count here.
+const MULTICLASS_SPELL_SLOTS: number[][] = [
+  [],
+  [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2],
+  [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+
+export function maxSpellSlots(char: DdbCharacter, level: number): number {
+  const reported = char.spellSlots?.find((s) => s.level === level)?.available ?? 0;
+  if (reported > 0) return reported;
+  const casters = (char.classes ?? []).filter((c) =>
+    c.definition.name !== "Warlock" &&
+    (c.definition.spellRules?.levelSpellSlots?.[c.level] ?? []).some((n) => n > 0));
+  if (casters.length === 0) return 0;
+  if (casters.length === 1) {
+    const c = casters[0];
+    return c.definition.spellRules?.levelSpellSlots?.[c.level]?.[level - 1] ?? 0;
+  }
+  let casterLevel = 0;
+  for (const c of casters) {
+    const rules = c.definition.spellRules;
+    const div = rules?.multiClassSpellSlotDivisor || 1;
+    casterLevel += rules?.multiClassSpellSlotRounding === 2 ? Math.ceil(c.level / div) : Math.floor(c.level / div);
+  }
+  return MULTICLASS_SPELL_SLOTS[Math.min(20, casterLevel)]?.[level - 1] ?? 0;
+}
+
+// A spell a feature lets you cast without a slot a limited number of times
+// (Paladin's Smite, Faithful Steed, Magic Initiate, racial spells). D&D Beyond
+// lists it as its own spell entry with limitedUse; its uses are written through
+// the same limited-use endpoint as class actions.
+interface FreeCast {
+  spell: DdbSpell;
+  used: number;
+  max: number;
+}
+
+function freeCasts(char: DdbCharacter): FreeCast[] {
+  const profBonus = calculateProficiencyBonus(computeLevel(char));
+  const out: FreeCast[] = [];
+  for (const spell of getAllSpells(char)) {
+    const lu = spell.limitedUse;
+    if (!lu || spell.entityTypeId == null) continue;
+    const max = effectiveMaxUses({
+      maxUses: lu.maxUses ?? 0,
+      numberUsed: lu.numberUsed ?? 0,
+      resetType: lu.resetType ?? 0,
+      resetTypeDescription: StringUtils.EMPTY,
+      useProficiencyBonus: lu.useProficiencyBonus,
+      statModifierUsesId: lu.statModifierUsesId,
+    }, profBonus, char);
+    if (max > 0) out.push({ spell, used: lu.numberUsed ?? 0, max });
+  }
+  return out;
+}
+
+function findFreeCast(char: DdbCharacter, name: string): FreeCast | undefined {
+  const lower = name.toLowerCase();
+  return freeCasts(char).find((f) => f.spell.definition.name.toLowerCase() === lower);
 }
 
 // A class-list spell is castable when it is a cantrip, prepared, always prepared,
@@ -624,11 +692,13 @@ function formatSpeed(char: DdbCharacter): string {
 }
 
 function formatSpellSlots(char: DdbCharacter): string {
-  if (!char.spellSlots || char.spellSlots.length === 0) {
-    return StringUtils.EMPTY;
-  }
+  const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => ({
+    level,
+    used: char.spellSlots?.find((s) => s.level === level)?.used ?? 0,
+    available: maxSpellSlots(char, level),
+  }));
 
-  const lines = char.spellSlots
+  const lines = slots
     .filter(slot => slot.available > 0)
     .map(slot => {
       const filled = "\u25CF".repeat(slot.available - slot.used);
@@ -1924,6 +1994,13 @@ interface CastSpellParams {
   characterId: number;
   spellName: string;
   level?: number;
+  // Spend a feature's free cast (no spell slot) instead of a slot.
+  free?: boolean;
+}
+
+function freeCastHint(char: DdbCharacter, name: string): string {
+  const fc = findFreeCast(char, name);
+  return fc && fc.used < fc.max ? ` A free cast is still available (${fc.max - fc.used} left): cast with free: true.` : StringUtils.EMPTY;
 }
 
 export async function castSpell(
@@ -1967,6 +2044,37 @@ export async function castSpell(
       };
     }
 
+    if (params.free) {
+      const fc = findFreeCast(character, spell.definition.name);
+      if (!fc) {
+        return {
+          content: [{ type: "text", text: `${spell.definition.name} has no free cast on this character. Cast it without "free" to use a spell slot.` }],
+        };
+      }
+      if (fc.used >= fc.max) {
+        return {
+          content: [{ type: "text", text: `No free casts of ${spell.definition.name} left (${fc.used}/${fc.max} used). Cast it without "free" to use a spell slot.` }],
+        };
+      }
+      const newUsed = fc.used + 1;
+      await client.put(
+        ENDPOINTS.character.updateLimitedUse(),
+        {
+          characterId: params.characterId,
+          id: String(fc.spell.id),
+          entityTypeId: String(fc.spell.entityTypeId),
+          uses: newUsed,
+        },
+        [`character:${params.characterId}`]
+      );
+      return {
+        content: [{
+          type: "text",
+          text: `Cast ${spell.definition.name} without a spell slot. Free casts: ${newUsed}/${fc.max} used.`,
+        }],
+      };
+    }
+
     const spellLevel = params.level ?? spell.definition.level;
 
     // Cantrips don't use spell slots
@@ -2004,10 +2112,11 @@ export async function castSpell(
     // Use regular spell slot
     const slotData = character.spellSlots?.find(s => s.level === spellLevel);
     if (slotData) {
+      const available = maxSpellSlots(character, spellLevel);
       const newUsed = slotData.used + 1;
-      if (newUsed > slotData.available) {
+      if (newUsed > available) {
         return {
-          content: [{ type: "text", text: `No level ${spellLevel} spell slots remaining (${slotData.used}/${slotData.available} used).` }],
+          content: [{ type: "text", text: `No level ${spellLevel} spell slots remaining (${slotData.used}/${available} used).${freeCastHint(character, spell.definition.name)}` }],
         };
       }
       await client.put(
@@ -2018,7 +2127,7 @@ export async function castSpell(
       return {
         content: [{
           type: "text",
-          text: `Cast ${spell.definition.name} at level ${spellLevel}. Level ${spellLevel} slots: ${newUsed}/${slotData.available} used.`,
+          text: `Cast ${spell.definition.name} at level ${spellLevel}. Level ${spellLevel} slots: ${newUsed}/${available} used.${freeCastHint(character, spell.definition.name)}`,
         }],
       };
     }
@@ -2072,6 +2181,26 @@ export async function useAbility(
   const allActions: DdbAction[] = [];
   for (const list of Object.values(actions)) {
     if (Array.isArray(list)) allActions.push(...list);
+  }
+  // Free spell casts (Faithful Steed, Paladin's Smite) count as limited-use
+  // abilities too. Actions come first, so a same-named action still wins.
+  const freeCastIds = new Set<number>();
+  for (const fc of freeCasts(character)) {
+    if (allActions.some((a) => a.name?.toLowerCase() === fc.spell.definition.name.toLowerCase())) continue;
+    freeCastIds.add(fc.spell.id);
+    allActions.push({
+      id: fc.spell.id,
+      entityTypeId: fc.spell.entityTypeId!,
+      name: fc.spell.definition.name,
+      componentId: fc.spell.componentId ?? 0,
+      componentTypeId: fc.spell.componentTypeId ?? 0,
+      limitedUse: {
+        maxUses: fc.max,
+        numberUsed: fc.used,
+        resetType: fc.spell.limitedUse?.resetType ?? 0,
+        resetTypeDescription: StringUtils.EMPTY,
+      },
+    });
   }
 
   // Try exact match first (case-insensitive)
@@ -2154,7 +2283,7 @@ export async function useAbility(
     content: [
       {
         type: "text",
-        text: `${foundAction.name}: ${newUses}/${maxUses} uses expended.`,
+        text: `${foundAction.name}${freeCastIds.has(foundAction.id) ? " (free cast)" : ""}: ${newUses}/${maxUses} uses expended.`,
       },
     ],
   };
