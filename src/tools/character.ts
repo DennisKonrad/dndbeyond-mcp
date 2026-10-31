@@ -2289,6 +2289,85 @@ export async function useAbility(
   };
 }
 
+// Machine-readable play state for UIs that mirror the sheet (trackers, overlays).
+// D&D Beyond stays the source of truth: every number here is read live and
+// computed the same way the text sheet computes it (slot caps from the class
+// table, limited uses with proficiency/ability scaling, free spell casts).
+export interface CharacterState {
+  id: number;
+  name: string;
+  hp: { current: number; max: number; temp: number };
+  slots: Array<{ level: number; used: number; max: number }>;
+  pactMagic: { level: number; used: number; max: number } | null;
+  resources: Array<{ name: string; used: number; max: number; reset: string }>;
+  freeCasts: Array<{ name: string; level: number; used: number; max: number; reset: string }>;
+  inventory: Array<{ id: number; name: string; quantity: number; equipped: boolean }>;
+  currency: DdbCharacter["currencies"];
+  inspiration: boolean;
+  deathSaves: DdbCharacter["deathSaves"];
+  conditions: unknown[];
+}
+
+export function buildCharacterState(char: DdbCharacter): CharacterState {
+  const profBonus = calculateProficiencyBonus(computeLevel(char));
+  const resources: CharacterState["resources"] = [];
+  for (const list of Object.values(char.actions ?? {})) {
+    if (!Array.isArray(list)) continue;
+    for (const a of list) {
+      if (!a.limitedUse) continue;
+      resources.push({
+        name: a.name,
+        used: a.limitedUse.numberUsed,
+        max: effectiveMaxUses(a.limitedUse, profBonus, char),
+        reset: a.limitedUse.resetTypeDescription || LIMITED_USE_RESET[a.limitedUse.resetType] || "unknown",
+      });
+    }
+  }
+  const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    .map((level) => ({ level, used: char.spellSlots?.find((s) => s.level === level)?.used ?? 0, max: maxSpellSlots(char, level) }))
+    .filter((s) => s.max > 0);
+  const pm = char.pactMagic;
+  return {
+    id: char.id,
+    name: char.name,
+    hp: { current: calculateCurrentHp(char), max: calculateMaxHp(char), temp: char.temporaryHitPoints ?? 0 },
+    slots,
+    pactMagic: pm && pm.available > 0 ? { level: pm.level, used: pm.used, max: pm.available } : null,
+    resources,
+    freeCasts: freeCasts(char).map((f) => ({
+      name: f.spell.definition.name,
+      level: f.spell.definition.level,
+      used: f.used,
+      max: f.max,
+      reset: LIMITED_USE_RESET[f.spell.limitedUse?.resetType ?? 0] ?? "unknown",
+    })),
+    inventory: (char.inventory ?? []).map((i) => ({
+      id: i.id,
+      name: i.definition.name,
+      quantity: (i as { quantity?: number }).quantity ?? 1,
+      equipped: (i as { equipped?: boolean }).equipped ?? false,
+    })),
+    currency: char.currencies,
+    inspiration: (char as { inspiration?: boolean }).inspiration ?? false,
+    deathSaves: char.deathSaves,
+    conditions: (char as { conditions?: unknown[] }).conditions ?? [],
+  };
+}
+
+export async function getCharacterState(
+  client: DdbClient,
+  params: { characterId: number }
+): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  // Always live: a mirror that shows a cached value would contradict the sheet.
+  client.invalidateCache(`character:${params.characterId}`);
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    `character:${params.characterId}`,
+    60_000
+  );
+  return { content: [{ type: "text", text: JSON.stringify(buildCharacterState(character)) }] };
+}
+
 // ============================================================================
 // CHARACTER CREATION / BUILDER
 // ============================================================================
