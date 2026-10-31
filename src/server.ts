@@ -521,7 +521,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "use_ability",
-    "Update uses of a limited-use ability (e.g., Favored Enemy, Dreadful Strike, Ki Points). Increments by 1 if 'uses' is not specified, or set exact count with 'uses'. Set uses to 0 to reset.",
+    "Update uses of a limited-use ability (e.g., Favored Enemy, Dreadful Strike, Ki Points), including free spell casts granted by features (e.g. Find Steed). Increments by 1 if 'uses' is not specified, or set exact count with 'uses'. Set uses to 0 to reset.",
     {
       characterId: z.coerce.number().describe("The character ID"),
       abilityName: z
@@ -591,7 +591,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "cast_spell",
-    "Cast a spell and automatically decrement the appropriate spell slot or pact magic slot. Supports upcasting.",
+    "Cast a spell and automatically decrement the appropriate spell slot or pact magic slot. Supports upcasting. With free: true it spends a feature's free cast instead (e.g. Find Steed from Faithful Steed, Divine Smite from Paladin's Smite).",
     {
       characterId: z.coerce.number().describe("The character ID"),
       spellName: z.string().describe("Name of the spell to cast"),
@@ -599,12 +599,17 @@ export async function startServer(): Promise<void> {
         .coerce.number()
         .optional()
         .describe("Cast at this level (for upcasting). Defaults to spell's base level."),
+      free: z
+        .boolean()
+        .optional()
+        .describe("Spend a free cast granted by a feature (no spell slot) instead of a slot."),
     },
     async (params) =>
       castSpell(client, {
         characterId: params.characterId,
         spellName: params.spellName,
         level: params.level,
+        free: params.free,
       })
   );
 

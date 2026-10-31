@@ -72,6 +72,12 @@ export interface DdbClass {
     spellRules?: {
       levelCantripsKnownMaxes?: number[];
       levelSpellKnownMaxes?: number[];
+      // Slots per spell level, indexed by class level: levelSpellSlots[15] = [4, 3, 3, 2, 0, ...].
+      levelSpellSlots?: number[][];
+      // Multiclass caster level = class level / divisor (1 full, 2 half, 3 third);
+      // rounding 1 = down, 2 = up (the 2024 Paladin and Ranger round up).
+      multiClassSpellSlotDivisor?: number | null;
+      multiClassSpellSlotRounding?: number | null;
     } | null;
   };
   subclassDefinition: { name: string; classFeatures: DdbClassFeature[] } | null;
@@ -160,6 +166,8 @@ export interface DdbSpell {
     maxUses?: number | null;
     resetType?: number | null; // 1=short rest, 2=long rest, 3=day, 4=recharge
     numberUsed?: number | null;
+    useProficiencyBonus?: boolean;
+    statModifierUsesId?: number | null;
   } | null;
 }
 
